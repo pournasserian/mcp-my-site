@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/McpMySite.Core/McpMySite.Core.csproj" />
+    <Project Path="src/McpMySite.Indexer/McpMySite.Indexer.csproj" />
+    <Project Path="src/McpMySite.Server/McpMySite.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/McpMySite.Tests/McpMySite.Tests.csproj" />
+  </Folder>
+</Solution>
