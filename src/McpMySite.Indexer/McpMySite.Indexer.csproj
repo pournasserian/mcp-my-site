@@ -7,6 +7,7 @@
     <Description>Command-line indexer: crawls a website and builds a search index for the MCP my site server.</Description>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>mcpmysite</ToolCommandName>
+    <UserSecretsId>mcpmysite-indexer</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

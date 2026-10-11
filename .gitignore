@@ -427,6 +427,7 @@ FodyWeavers.xsd
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
 
-# mcp-my-site
-index/
+# mcp-my-site: built indexes and the embedding cache (root only; source folders named Index/ must stay tracked)
+/index/
+/index-*/
 .mcpmysite/
