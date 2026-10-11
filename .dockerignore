@@ -1,0 +1,25 @@
+# The Docker build context is the repository root. This file keeps host build output, local state
+# and tooling folders out of it; the image restores and publishes from source on its own.
+
+# Host build output. A copied obj/project.assets.json would overwrite the one restored inside the
+# container and break the build.
+**/bin
+**/obj
+
+# Source control, tooling and per-user state
+.git
+.github
+.claude
+.vscode
+.idea
+**/.vs
+
+# Built indexes and the embedding cache from local runs. The image loads its index at run time.
+# Anchored to the repository root on purpose: a **/index pattern could also match the server's
+# Index source folder on a case-insensitive file system.
+index
+index-*
+**/.mcpmysite
+
+# Local environment files, which may hold keys
+**/*.env
