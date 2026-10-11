@@ -21,7 +21,7 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
     public async Task<BuildReport> RunAsync(IndexerConfig config, string baseDirectory, CancellationToken cancellationToken)
     {
         config.Validate();
-        var siteUri = new Uri(config.SiteUrl);
+        var siteUri = new Uri(config.Site.Url);
         var outputDirectory = Path.GetFullPath(Path.Combine(baseDirectory, config.Output.Directory));
         var report = new BuildReport { SiteUrl = siteUri.ToString(), Store = config.Output.Store };
         var stopwatch = Stopwatch.StartNew();
@@ -47,7 +47,7 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
             report.EmbeddingsFromCache = embedder.CacheHits;
 
             var builtAt = DateTimeOffset.UtcNow;
-            var resolvedSiteName = config.SiteName ?? siteName ?? siteUri.Host;
+            var resolvedSiteName = config.Site.Name ?? siteName ?? siteUri.Host;
             var manifest = new IndexManifest
             {
                 FormatVersion = IndexFormat.CurrentVersion,
@@ -59,7 +59,7 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
                 BuiltAt = builtAt,
                 PageCount = pages.Count,
                 ChunkCount = chunks.Count,
-                Instructions = SiteOutline.Build(resolvedSiteName, siteUri.ToString(), pages, builtAt, config.InstructionsPreamble),
+                Instructions = SiteOutline.Build(resolvedSiteName, siteUri.ToString(), pages, builtAt, config.Instructions.Preamble),
                 IndexerVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3),
             };
 

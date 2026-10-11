@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Text.Json;
 using McpMySite.Core;
 using McpMySite.Core.Embeddings;
 using McpMySite.Core.Model;
@@ -15,57 +14,74 @@ root.Subcommands.Add(InitCommand());
 root.Subcommands.Add(SearchCommand());
 return await root.Parse(args).InvokeAsync();
 
+static Option<string> ConfigOption() => new("--config", "-c")
+{
+    Description = "Path to appsettings.json. appsettings.{Environment}.json next to it is applied on top.",
+    DefaultValueFactory = _ => IndexerConfig.DefaultFileName,
+};
+
+static Option<string?> EnvironmentOption() => new("--environment", "-e")
+{
+    Description = "Environment name (default: DOTNET_ENVIRONMENT, ASPNETCORE_ENVIRONMENT, then Production).",
+};
+
+static Option<string[]> SetOption() => new("--set")
+{
+    Description = "Override any setting: --set Crawl:MaxPages=50. Repeatable.",
+};
+
 static Command BuildCommand()
 {
-    var configOption = new Option<string>("--config", "-c") { Description = "Path to the indexer config file.", DefaultValueFactory = _ => IndexerConfig.DefaultFileName };
-    var siteUrlOption = new Option<string?>("--site-url") { Description = "Overrides siteUrl." };
+    var configOption = ConfigOption();
+    var environmentOption = EnvironmentOption();
+    var setOption = SetOption();
+    var siteUrlOption = new Option<string?>("--site-url") { Description = "Overrides Site:Url." };
     var folderOption = new Option<string?>("--folder") { Description = "Index a local folder of built HTML instead of crawling." };
-    var outputOption = new Option<string?>("--output", "-o") { Description = "Overrides output.directory." };
-    var storeOption = new Option<string?>("--store") { Description = "Overrides output.store: json or sqlite." };
-    var maxPagesOption = new Option<int?>("--max-pages") { Description = "Overrides crawl.maxPages." };
+    var outputOption = new Option<string?>("--output", "-o") { Description = "Overrides Output:Directory." };
+    var storeOption = new Option<string?>("--store") { Description = "Overrides Output:Store: json or sqlite." };
+    var maxPagesOption = new Option<int?>("--max-pages") { Description = "Overrides Crawl:MaxPages." };
     var verboseOption = new Option<bool>("--verbose", "-v") { Description = "Debug logging." };
 
     var command = new Command("build", "Builds the index. Every run is a full rebuild.");
-    command.Options.Add(configOption);
-    command.Options.Add(siteUrlOption);
-    command.Options.Add(folderOption);
-    command.Options.Add(outputOption);
-    command.Options.Add(storeOption);
-    command.Options.Add(maxPagesOption);
-    command.Options.Add(verboseOption);
+    foreach (var option in new Option[] { configOption, environmentOption, setOption, siteUrlOption, folderOption, outputOption, storeOption, maxPagesOption, verboseOption })
+    {
+        command.Options.Add(option);
+    }
 
     command.SetAction(async (parseResult, cancellationToken) =>
     {
-        var configPath = Path.GetFullPath(parseResult.GetValue(configOption)!);
-        IndexerConfig config;
-        if (File.Exists(configPath))
+        IndexerConfigLoader.Loaded loaded;
+        try
         {
-            config = IndexerConfig.Load(configPath);
+            loaded = IndexerConfigLoader.Load(parseResult.GetValue(configOption), parseResult.GetValue(environmentOption), parseResult.GetValue(setOption));
         }
-        else if (parseResult.GetValue(siteUrlOption) is not null)
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException or System.Text.Json.JsonException)
         {
-            config = new IndexerConfig();
-        }
-        else
-        {
-            Console.Error.WriteLine($"Config file not found: {configPath}. Run 'mcpmysite init' or pass --site-url.");
+            Console.Error.WriteLine(ex.Message);
             return 2;
         }
 
-        if (parseResult.GetValue(siteUrlOption) is { } siteUrl) config.SiteUrl = siteUrl;
+        var config = loaded.Config;
+        if (parseResult.GetValue(siteUrlOption) is { } siteUrl) config.Site.Url = siteUrl;
         if (parseResult.GetValue(folderOption) is { } folder) { config.Source.Type = SourceType.Folder; config.Source.Folder = folder; }
         if (parseResult.GetValue(outputOption) is { } output) config.Output.Directory = output;
         if (parseResult.GetValue(storeOption) is { } store) config.Output.Store = store;
         if (parseResult.GetValue(maxPagesOption) is { } maxPages) config.Crawl.MaxPages = maxPages;
 
-        using var loggerFactory = CreateLoggerFactory(parseResult.GetValue(verboseOption));
-        var builder = new IndexBuilder(loggerFactory.CreateLogger<IndexBuilder>());
-        var baseDirectory = File.Exists(configPath) ? Path.GetDirectoryName(configPath)! : Directory.GetCurrentDirectory();
+        if (loaded.ConfigFile is null && string.IsNullOrWhiteSpace(config.Site.Url))
+        {
+            Console.Error.WriteLine($"No {IndexerConfig.DefaultFileName} found at {Path.GetFullPath(parseResult.GetValue(configOption)!)}. Run 'mcpmysite init <site-url>' or pass --site-url.");
+            return 2;
+        }
+
+        using var loggerFactory = CreateLoggerFactory(loaded, parseResult.GetValue(verboseOption));
+        var logger = loggerFactory.CreateLogger<IndexBuilder>();
+        logger.LogInformation("Environment {Environment}; config {Config}", loaded.EnvironmentName, loaded.ConfigFile ?? "(defaults and overrides only)");
 
         BuildReport report;
         try
         {
-            report = await builder.RunAsync(config, baseDirectory, cancellationToken);
+            report = await new IndexBuilder(logger).RunAsync(config, loaded.BaseDirectory, cancellationToken);
         }
         catch (InvalidOperationException ex)
         {
@@ -83,10 +99,10 @@ static Command BuildCommand()
 static Command InitCommand()
 {
     var siteUrlArgument = new Argument<string>("site-url") { Description = "Base URL of the site, e.g. https://example.com" };
-    var configOption = new Option<string>("--config", "-c") { Description = "Where to write the config file.", DefaultValueFactory = _ => IndexerConfig.DefaultFileName };
+    var configOption = new Option<string>("--config", "-c") { Description = "Where to write the file.", DefaultValueFactory = _ => IndexerConfig.DefaultFileName };
     var storeOption = new Option<string>("--store") { Description = "json or sqlite.", DefaultValueFactory = _ => IndexFormat.JsonStoreType };
 
-    var command = new Command("init", "Writes a starter config file.");
+    var command = new Command("init", "Writes a starter appsettings.json with every setting and its default.");
     command.Arguments.Add(siteUrlArgument);
     command.Options.Add(configOption);
     command.Options.Add(storeOption);
@@ -100,11 +116,14 @@ static Command InitCommand()
             return 1;
         }
 
-        var config = new IndexerConfig { SiteUrl = parseResult.GetValue(siteUrlArgument)! };
+        var config = new IndexerConfig();
+        config.Site.Url = parseResult.GetValue(siteUrlArgument)!;
         config.Output.Store = parseResult.GetValue(storeOption)!;
-        File.WriteAllText(path, JsonSerializer.Serialize(config, IndexerConfig.JsonOptions));
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, IndexerConfigLoader.ToAppSettingsJson(config));
         Console.WriteLine($"Wrote {path}");
-        Console.WriteLine($"Set the {config.Embeddings.ApiKeyEnvironmentVariable} environment variable, then run: mcpmysite build");
+        Console.WriteLine($"Set the {config.Embeddings.ApiKeyEnvironmentVariable} environment variable, then run: mcpmysite build --config {parseResult.GetValue(configOption)}");
         return 0;
     });
 
@@ -114,34 +133,38 @@ static Command InitCommand()
 static Command SearchCommand()
 {
     var queryArgument = new Argument<string>("query") { Description = "Search text." };
-    var indexOption = new Option<string>("--index", "-i") { Description = "Index directory.", DefaultValueFactory = _ => "index" };
+    var configOption = ConfigOption();
+    var environmentOption = EnvironmentOption();
+    var indexOption = new Option<string?>("--index", "-i") { Description = "Index directory. Defaults to Output:Directory from the config, else ./index." };
     var limitOption = new Option<int>("--limit", "-n") { Description = "Number of results.", DefaultValueFactory = _ => 5 };
     var keywordOnlyOption = new Option<bool>("--keyword-only") { Description = "Skip the embedding call and run keyword search only." };
-    var endpointOption = new Option<string?>("--endpoint") { Description = "Embedding endpoint; defaults to OpenRouter." };
 
     var command = new Command("search", "Runs a query against a built index. Handy for checking an index before deploying it.");
     command.Arguments.Add(queryArgument);
-    command.Options.Add(indexOption);
-    command.Options.Add(limitOption);
-    command.Options.Add(keywordOnlyOption);
-    command.Options.Add(endpointOption);
+    foreach (var option in new Option[] { configOption, environmentOption, indexOption, limitOption, keywordOnlyOption })
+    {
+        command.Options.Add(option);
+    }
 
     command.SetAction(async (parseResult, cancellationToken) =>
     {
+        var loaded = IndexerConfigLoader.Load(parseResult.GetValue(configOption), parseResult.GetValue(environmentOption));
+        var indexDirectory = parseResult.GetValue(indexOption) is { } explicitIndex
+            ? Path.GetFullPath(explicitIndex)
+            : Path.GetFullPath(Path.Combine(loaded.BaseDirectory, loaded.Config.Output.Directory));
+
         var query = parseResult.GetValue(queryArgument)!;
-        using var store = await IndexStoreOpener.OpenAsync(Path.GetFullPath(parseResult.GetValue(indexOption)!), cancellationToken);
+        using var store = await IndexStoreOpener.OpenAsync(indexDirectory, cancellationToken);
 
         ReadOnlyMemory<float>? vector = null;
         if (!parseResult.GetValue(keywordOnlyOption))
         {
-            var options = new EmbeddingOptions();
-            if (parseResult.GetValue(endpointOption) is { } endpoint) options.Endpoint = endpoint;
-            var generator = EmbeddingGeneratorFactory.Create(options, store.Manifest.EmbeddingModel, store.Manifest.EmbeddingDimensions);
+            var generator = EmbeddingGeneratorFactory.Create(loaded.Config.Embeddings, store.Manifest.EmbeddingModel, store.Manifest.EmbeddingDimensions);
             vector = await generator.GenerateVectorAsync(query, cancellationToken: cancellationToken);
         }
 
         var response = await store.SearchAsync(new SearchRequest { Query = query, QueryVector = vector, Limit = parseResult.GetValue(limitOption) }, cancellationToken);
-        Console.WriteLine($"{response.Hits.Count} result(s){(response.KeywordOnly ? " (keyword only)" : string.Empty)} for \"{query}\"");
+        Console.WriteLine($"{response.Hits.Count} result(s){(response.KeywordOnly ? " (keyword only)" : string.Empty)} for \"{query}\" in {indexDirectory}");
         foreach (var hit in response.Hits)
         {
             Console.WriteLine();
@@ -157,15 +180,18 @@ static Command SearchCommand()
     return command;
 }
 
-static ILoggerFactory CreateLoggerFactory(bool verbose) => LoggerFactory.Create(logging =>
+static ILoggerFactory CreateLoggerFactory(IndexerConfigLoader.Loaded loaded, bool verbose) => LoggerFactory.Create(logging =>
 {
-    logging.SetMinimumLevel(verbose ? LogLevel.Debug : LogLevel.Information);
+    logging.AddConfiguration(loaded.Configuration.GetSection("Logging"));
     logging.AddSimpleConsole(o =>
     {
         o.SingleLine = true;
         o.TimestampFormat = "HH:mm:ss ";
     });
-    logging.AddFilter("System.Net.Http", LogLevel.Warning);
+    if (verbose)
+    {
+        logging.SetMinimumLevel(LogLevel.Debug);
+    }
 });
 
 static void PrintSummary(BuildReport report)
