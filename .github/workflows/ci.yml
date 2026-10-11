@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# The workflow only builds and tests, so the token is read-only and no secrets are needed.
+permissions:
+  contents: read
+
+# A new push to a pull request cancels the run it replaces. Runs on master always finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  build-and-test:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is in the matrix on purpose: it is where the project is developed, and
+        # it is case-insensitive, so it exposes path and ignore-file mistakes that Linux hides.
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore McpMySite.slnx
+
+      - name: Build
+        run: dotnet build McpMySite.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/McpMySite.Tests --configuration Release --no-build
+
+  container:
+    name: Container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build --file src/McpMySite.Server/Dockerfile --tag mcp-my-site:ci .
+
+      # With no index configured the server must still start and report that it has none (503).
+      - name: Smoke test
+        run: |
+          docker run --detach --name smoke --publish 8080:8080 mcp-my-site:ci
+          status=000
+          for attempt in $(seq 1 30); do
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:8080/healthz || true)
+            [ "$status" = "503" ] && break
+            sleep 1
+          done
+          echo "healthz status: $status"
+          docker logs smoke
+          docker rm --force smoke
+          [ "$status" = "503" ]
