@@ -178,6 +178,39 @@ public class SiteOutlineTests
         Assert.Contains("- Documentation (/docs, 3 pages): Rockets; Widgets\n", outline);
         Assert.EndsWith("- About us (/about, 1 page)", outline);
     }
+
+    [Fact]
+    public void StaysWithinTheLengthBudgetByTrimmingTheOutline()
+    {
+        // 30 sections of 5 pages with long titles: far more outline than fits.
+        var pages = Enumerable.Range(0, 30).SelectMany(s => Enumerable.Range(0, 5).Select(p => new PageDocument
+        {
+            Id = s * 5 + p + 1,
+            Url = $"https://example.test/section-{s:00}/page-{p}",
+            Title = $"Page {p} of section {s} with a title long enough to crowd the outline quickly",
+            Language = "en",
+            Markdown = "Text.",
+        })).ToList();
+
+        var outline = SiteOutline.Build("Example", "https://example.test/", new string('d', 500), pages, BuiltAt, null);
+
+        Assert.True(outline.Length <= SiteOutline.MaxChars, $"{outline.Length} characters");
+        Assert.Contains(new string('d', 300) + "…", outline);
+        Assert.Contains("Cite the URL", outline);
+        Assert.Contains("- /section-00 (5 pages): Page 0 of section 0", outline);
+        Assert.Matches(@"- and \d+ more sections$", outline);
+    }
+
+    [Fact]
+    public void ListsNewestPagesFirstWhateverTheCrawlOrder()
+    {
+        var outline = SiteOutline.Build("Example", "https://example.test/", null, TestIndex.Pages, BuiltAt, null);
+        var reversed = SiteOutline.Build("Example", "https://example.test/", null, TestIndex.Pages.Reverse().ToList(), BuiltAt, null);
+
+        // Rockets has a modified date and Widgets has none.
+        Assert.Contains("- /docs (2 pages): Rockets; Widgets", outline);
+        Assert.Equal(outline, reversed);
+    }
 }
 
 public class IndexStatsTests

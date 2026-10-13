@@ -506,19 +506,27 @@ understand, or pages that genuinely have little text.
 The indexer writes short instructions into the manifest, and the server hands them to MCP clients
 in its `initialize` answer. They tell the model what the site is, when to use the server and how:
 
-- the site name, URL and description (`Site:Description`, or the home page's meta description);
+- the site name, URL and description (`Site:Description`, or the home page's meta description), with
+  the description cut at 300 characters;
 - how many pages were indexed and the snapshot date;
 - when to use the server: questions about the site or its subjects, and answers that should rest on
   the site rather than general knowledge;
 - how to use `search` and `fetch`, to cite the page URL, and to say so when nothing relevant is found;
 - the content language;
 - an outline: up to 12 top-level sections, largest first, each labelled with the title of its own
-  landing page (such as `/docs`) when that page was indexed, its page count and a few page titles.
+  landing page (such as `/docs`) when that page was indexed, its page count and up to four page
+  titles, newest first.
 
-The text is built from the crawled pages by a fixed template, so the same site gives the same text.
-For a 40-page site it is about 2,000 characters. `Instructions:Preamble` adds your own text in front
-of it (for example, "Answer in the site's own voice and link to the page you used."). On the server,
-`Mcp:Instructions` replaces the whole text.
+The text is built from the crawled pages by a fixed template, so the same site gives the same text
+whatever order the crawl found the pages in. It is kept to 2,000 characters: Claude Code is reported
+to cut server instructions at 2,048, and several servers share the model's attention anyway. When a
+site has more to say, the outline gives way first, dropping page titles and then whole sections (the
+last line then says how many were left out); everything above the outline always stays.
+
+`Instructions:Preamble` adds your own text in front (for example, "Answer in the site's own voice and
+link to the page you used."). It counts toward the 2,000 characters, so a long preamble shortens the
+outline, and the indexer warns when the preamble alone pushes the text past the limit. On the server,
+`Mcp:Instructions` replaces the whole text and is not checked.
 
 Section landing-page titles and the home page description do most of the work, so give them content
 a reader would understand out of context: "Writing: MCP servers, AI tooling, IoT" says more than
