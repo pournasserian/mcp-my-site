@@ -314,6 +314,7 @@ which is why their shipped defaults are empty.
 |---|---|---|---|
 | `Site:Url` | string | (required) | Absolute `http(s)` URL of the site. Also the base for folder-sourced URLs. |
 | `Site:Name` | string | from the site | Display name used in the server instructions. Falls back to the home page's `og:site_name`, then the host name. |
+| `Site:Description` | string | from the site | One or two sentences on what the site is about, used in the server instructions. Falls back to the home page's meta description. |
 | `Source:Type` | `Crawl` or `Folder` | `Crawl` | Where pages come from. |
 | `Source:Folder` | string | | Folder of built HTML when `Source:Type` is `Folder`. Relative to the config file. |
 | `Source:FolderUrlStyle` | `Clean` or `File` | `Clean` | `Clean`: `about.html` becomes `/about`, `docs/index.html` becomes `/docs/`. `File`: paths keep `.html`. A `<link rel="canonical">` in the page wins over both. |
@@ -502,11 +503,26 @@ understand, or pages that genuinely have little text.
 
 ### 6.8 Server instructions from the index
 
-The indexer writes a short outline into the manifest, and the server hands it to MCP clients as its
-instructions: what site this is, how many pages, the content language, the main sections with a few
-page titles each, and how to use `search` and `fetch`. `Instructions:Preamble` adds your own text in
-front of it (for example, "Answer in the site's own voice and link to the page you used."). On the
-server, `Mcp:Instructions` replaces the whole text.
+The indexer writes short instructions into the manifest, and the server hands them to MCP clients
+in its `initialize` answer. They tell the model what the site is, when to use the server and how:
+
+- the site name, URL and description (`Site:Description`, or the home page's meta description);
+- how many pages were indexed and the snapshot date;
+- when to use the server: questions about the site or its subjects, and answers that should rest on
+  the site rather than general knowledge;
+- how to use `search` and `fetch`, to cite the page URL, and to say so when nothing relevant is found;
+- the content language;
+- an outline: up to 12 top-level sections, largest first, each labelled with the title of its own
+  landing page (such as `/docs`) when that page was indexed, its page count and a few page titles.
+
+The text is built from the crawled pages by a fixed template, so the same site gives the same text.
+For a 40-page site it is about 2,000 characters. `Instructions:Preamble` adds your own text in front
+of it (for example, "Answer in the site's own voice and link to the page you used."). On the server,
+`Mcp:Instructions` replaces the whole text.
+
+Section landing-page titles and the home page description do most of the work, so give them content
+a reader would understand out of context: "Writing: MCP servers, AI tooling, IoT" says more than
+"Blog".
 
 ## 7. The server
 
@@ -1215,12 +1231,13 @@ index/
 |---|---|
 | `formatVersion` | Index format version; `1` today |
 | `storeType` | `json` or `sqlite` |
-| `Site:Url`, `Site:Name` | The site |
+| `siteUrl`, `siteName`, `siteDescription` | The site |
 | `embeddingModel`, `embeddingDimensions` | How vectors were produced; the server embeds queries the same way |
 | `builtAt` | Build time; a change triggers a reload |
 | `pageCount`, `chunkCount` | Checked against the data files on load |
 | `instructions` | Generated MCP server instructions |
 | `indexerVersion` | Indexer that wrote it |
+| `stats` | Numbers from the run, for status pages: `source`, `startedAt`, `durationSeconds`, `pagesFetched`, `pagesSkippedNoIndex`, `pagesSkippedDuplicate`, `pagesSkippedEmpty`, `errors`, `embeddingsGenerated`, `embeddingsFromCache`, `words` (approximate), `newestPageModified`, `languages` (pages per language), `sections` (`path`, `title`, `pages`). Absent in indexes from older indexers. |
 
 Page record: `id`, `url`, `title`, `description`, `language`, `headings[]`, `modified`, `markdown`.
 Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equals its row in

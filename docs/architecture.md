@@ -92,11 +92,12 @@ classDiagram
     class IndexManifest {
         formatVersion
         storeType
-        siteUrl, siteName
+        siteUrl, siteName, siteDescription
         embeddingModel, embeddingDimensions
         builtAt
         pageCount, chunkCount
         instructions
+        stats
     }
     class PageDocument {
         id
@@ -445,6 +446,7 @@ The manifest is the contract between indexer and server.
 | Rule | Why |
 |---|---|
 | `formatVersion` is bumped on any incompatible change to the files; the server accepts the current and the previous version | Lets an index built by the previous indexer keep serving during a rolling upgrade |
+| New manifest fields are optional and do not bump the version (`siteDescription` and `stats` came this way) | Older servers ignore fields they do not know, and newer servers treat a missing field as absent |
 | The manifest is written last; SQLite is written to a temp file and renamed | A reader (or the poller) never sees a manifest that points at half-written data |
 | Data files are cross-checked against the manifest on load (vector length, page and chunk counts) | A partial upload is detected and rejected instead of serving wrong results |
 | The manifest records the embedding model and dimensions | The server embeds queries identically; switching models is an index rebuild, not a server change |
