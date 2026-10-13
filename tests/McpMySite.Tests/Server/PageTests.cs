@@ -44,6 +44,23 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
     }
 
     [Fact]
+    public async Task PlaygroundPageServesTheBrowserClient()
+    {
+        var response = await Client.GetAsync("/playground");
+        response.EnsureSuccessStatusCode();
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains("<title>Try the Example MCP server</title>", html);
+        Assert.Contains("<link rel=\"canonical\" href=\"http://localhost/playground\"", html);
+        Assert.Contains("data-endpoint=\"/mcp\"", html);
+        Assert.Contains("data-requires-key=\"true\"", html);
+        Assert.Contains("id=\"api-key\"", html);
+        Assert.Contains("'tools/call'", html);
+
+        Assert.Contains("href=\"/playground\"", await Client.GetStringAsync("/"));
+    }
+
+    [Fact]
     public async Task InfoApiDescribesSiteIndexAndEndpoints()
     {
         var info = await Client.GetFromJsonAsync<JsonElement>("/api/info");
@@ -72,6 +89,7 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         var xml = await sitemap.Content.ReadAsStringAsync();
         Assert.StartsWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>", xml);
         Assert.Contains("<loc>http://localhost/</loc>", xml);
+        Assert.Contains("<loc>http://localhost/playground</loc>", xml);
         Assert.Contains("<lastmod>2026-10-10</lastmod>", xml);
     }
 
@@ -116,6 +134,7 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         Assert.Equal("text/plain", home.Content.Headers.ContentType?.MediaType);
         Assert.Equal("User-agent: *\nDisallow: /\n", await client.GetStringAsync("/robots.txt"));
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/sitemap.xml")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/playground")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/docs/")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/openapi/v1.json")).StatusCode);
     }

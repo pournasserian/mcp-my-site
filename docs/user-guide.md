@@ -568,7 +568,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:DefaultLimit` | `10` | Results when `limit` is not given. |
 | `SearchApi:MaxLimit` | `20` | Upper bound for `limit`. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
-| `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the API reference at `/docs` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
+| `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the MCP playground at `/playground`, the API reference at `/docs` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
 | `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
 | `Ui:StaleAfterDays` | `30` | The landing page and `/api/info` flag the index as stale when it is older than this. `0` turns the flag off. |
 | `RateLimiting:PermitPerMinute` | `60` | Requests per client IP per minute, shared across the MCP endpoint and the search API. Excess requests get `429`. |
@@ -748,14 +748,28 @@ With `Ui:Enabled` on, `GET /` is a page for people who open the server's URL:
 The page is rendered on the server, so search engines and link previews see all of it; script only
 powers the copy buttons. It carries a description, a canonical link, Open Graph tags and schema.org
 `WebAPI` data. `robots.txt` keeps crawlers out of the MCP endpoint and `/api/`, and points them at
-`sitemap.xml`, which lists `/` and `/docs/` with the index build date. Until an index is loaded the
+`sitemap.xml`, which lists `/`, `/playground` and `/docs/` with the index build date. Until an index is loaded the
 page answers `503` and asks not to be indexed. With `Ui:Enabled` off, `/` is a short text summary and
 `robots.txt` disallows everything.
 
 Indexes from indexers older than this feature have no build statistics; the page then shows the
 manifest's page and chunk counts and build date only. Rebuild to get the rest.
 
-### 7.9 Telemetry
+### 7.9 The MCP playground
+
+`GET /playground` is a small MCP client in the page, so anyone can try the server without installing
+one. It connects to this server's MCP endpoint (on load, or after an API key is entered when
+`Mcp:ApiKey` is set), shows the server name, protocol version, capabilities and the instructions it
+gives to models, then builds a form for every tool from its input schema. Search results come back as
+a list with a "Fetch this page" button, fetched pages as their Markdown, and every JSON-RPC request
+and response is logged with its timing.
+
+The requests are the real thing: same endpoint, same rate limit, same API key check as any MCP client.
+The key stays in the page and is not stored. The playground always calls the endpoint on its own
+origin, so it needs no CORS settings. It needs JavaScript; the server home page covers clients for
+anyone without it.
+
+### 7.10 Telemetry
 
 The server is instrumented with OpenTelemetry (incoming requests, outgoing HTTP calls, runtime
 metrics) plus its own signals:
@@ -829,7 +843,8 @@ claude mcp add --transport http mysite https://example.com/mcp --header "Authori
 These clients cannot send a static header, so leave `Mcp:ApiKey` unset for them and rely on the rate
 limit; this is the public mode the spec describes.
 
-**MCP Inspector**, for debugging:
+**In the browser.** The server's own `/playground` page (section 7.9) lists the tools and calls them,
+which covers most quick checks. For deeper debugging use the **MCP Inspector**:
 
 ```bash
 npx @modelcontextprotocol/inspector
@@ -1304,6 +1319,7 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 | `GET /docs` | Interactive API reference, when `Ui:Enabled` | no | no |
 | `GET /healthz` | Health and index status | no | no |
 | `GET /` | Landing page, when `Ui:Enabled`; otherwise a one-line text description | no | no |
+| `GET /playground` | MCP playground, when `Ui:Enabled` | no | no |
 | `GET /robots.txt` | Crawler rules | no | no |
 | `GET /sitemap.xml` | Pages for search engines, when `Ui:Enabled` | no | no |
 

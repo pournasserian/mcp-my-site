@@ -31,6 +31,10 @@
         <p>Served by <a href="https://github.com/pournasserian/mcp-my-site">mcp-my-site</a> @Version.</p>
     </footer>
     <script>@((MarkupString)PageAssets.Script)</script>
+    @if (PageScript is not null)
+    {
+        <script>@((MarkupString)PageScript)</script>
+    }
 </body>
 </html>
 
@@ -51,6 +55,9 @@
     [Parameter] public bool Indexable { get; set; } = true;
 
     [Parameter] public string Version { get; set; } = string.Empty;
+
+    /// <summary>Script for this page only, from <see cref="PageAssets"/>.</summary>
+    [Parameter] public string? PageScript { get; set; }
 
     [Parameter] public RenderFragment? ChildContent { get; set; }
 }
