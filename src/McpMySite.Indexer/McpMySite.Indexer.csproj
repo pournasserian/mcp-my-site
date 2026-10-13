@@ -18,6 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Every setting with its default; ships next to the tool and is the lowest configuration layer. -->
+    <None Update="appsettings.defaults.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\McpMySite.Core\McpMySite.Core.csproj" />
   </ItemGroup>
 
