@@ -1,5 +1,5 @@
-using System.Text.Json.Nodes;
 using McpMySite.Indexer.Configuration;
+using System.Text.Json.Nodes;
 
 namespace McpMySite.Tests.Indexer;
 

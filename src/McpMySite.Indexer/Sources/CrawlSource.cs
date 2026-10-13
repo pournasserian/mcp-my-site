@@ -2,8 +2,6 @@ using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
-using McpMySite.Indexer.Configuration;
-using Microsoft.Extensions.Logging;
 
 namespace McpMySite.Indexer.Sources;
 

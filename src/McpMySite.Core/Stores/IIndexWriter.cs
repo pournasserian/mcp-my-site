@@ -1,5 +1,3 @@
-using McpMySite.Core.Model;
-
 namespace McpMySite.Core.Stores;
 
 /// <summary>Writes a complete index to a directory. Every run is a full rebuild.</summary>

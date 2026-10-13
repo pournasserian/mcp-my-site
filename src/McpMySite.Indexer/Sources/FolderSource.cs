@@ -1,5 +1,3 @@
-using McpMySite.Indexer.Configuration;
-
 namespace McpMySite.Indexer.Sources;
 
 /// <summary>Reads built HTML from a local folder and maps file paths to URLs under the site base URL.</summary>

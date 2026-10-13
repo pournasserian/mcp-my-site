@@ -1,12 +1,10 @@
 extern alias server;
-
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using McpMySite.Core;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
 
 namespace McpMySite.Tests.Server;
 
@@ -132,7 +130,9 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
     {
         var search = await McpCallAsync(new
         {
-            jsonrpc = "2.0", id = 2, method = "tools/call",
+            jsonrpc = "2.0",
+            id = 2,
+            method = "tools/call",
             @params = new { name = "search", arguments = new { query = "kerosene", limit = 3 } },
         });
         var structured = search.GetProperty("structuredContent");
@@ -141,7 +141,9 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
 
         var fetch = await McpCallAsync(new
         {
-            jsonrpc = "2.0", id = 3, method = "tools/call",
+            jsonrpc = "2.0",
+            id = 3,
+            method = "tools/call",
             @params = new { name = "fetch", arguments = new { url } },
         });
         var page = fetch.GetProperty("structuredContent");
@@ -154,7 +156,9 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
     {
         var fetch = await McpCallAsync(new
         {
-            jsonrpc = "2.0", id = 4, method = "tools/call",
+            jsonrpc = "2.0",
+            id = 4,
+            method = "tools/call",
             @params = new { name = "fetch", arguments = new { url = "https://example.test/nope" } },
         });
         Assert.True(fetch.GetProperty("isError").GetBoolean());
@@ -165,7 +169,9 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
     {
         var init = await McpCallAsync(new
         {
-            jsonrpc = "2.0", id = 5, method = "initialize",
+            jsonrpc = "2.0",
+            id = 5,
+            method = "initialize",
             @params = new { protocolVersion = "2025-06-18", capabilities = new { }, clientInfo = new { name = "test", version = "1" } },
         });
         Assert.Equal("Test instructions.", init.GetProperty("instructions").GetString());

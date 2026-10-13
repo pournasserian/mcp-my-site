@@ -1,5 +1,3 @@
-using McpMySite.Core.Model;
-
 namespace McpMySite.Core.Search;
 
 /// <summary>

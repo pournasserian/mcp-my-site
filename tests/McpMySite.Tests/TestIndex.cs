@@ -1,7 +1,3 @@
-using McpMySite.Core;
-using McpMySite.Core.Model;
-using McpMySite.Core.Stores;
-
 namespace McpMySite.Tests;
 
 /// <summary>Builds a small deterministic index on disk for store and server tests.</summary>

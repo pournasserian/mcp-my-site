@@ -1,5 +1,3 @@
-using McpMySite.Core;
-using McpMySite.Core.Stores;
 using McpMySite.Server.Index;
 using McpMySite.Server.Options;
 using Microsoft.AspNetCore.Builder;

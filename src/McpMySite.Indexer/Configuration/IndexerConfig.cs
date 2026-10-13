@@ -1,6 +1,3 @@
-using McpMySite.Core;
-using McpMySite.Core.Embeddings;
-
 namespace McpMySite.Indexer.Configuration;
 
 /// <summary>

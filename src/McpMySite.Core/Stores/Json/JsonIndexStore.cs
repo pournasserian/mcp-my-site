@@ -1,7 +1,3 @@
-using System.Text.Json;
-using McpMySite.Core.Model;
-using McpMySite.Core.Search;
-
 namespace McpMySite.Core.Stores.Json;
 
 /// <summary>

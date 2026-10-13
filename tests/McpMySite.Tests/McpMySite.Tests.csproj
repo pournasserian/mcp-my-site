@@ -20,8 +20,4 @@
     <ProjectReference Include="..\..\src\McpMySite.Server\McpMySite.Server.csproj" Aliases="global,server" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Using Include="Xunit" />
-  </ItemGroup>
-
 </Project>

@@ -1,9 +1,3 @@
-using System.ComponentModel;
-using McpMySite.Server.Index;
-using McpMySite.Server.Search;
-using ModelContextProtocol;
-using ModelContextProtocol.Server;
-
 namespace McpMySite.Server.Mcp;
 
 /// <summary>The two read-only tools the server exposes.</summary>

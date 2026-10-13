@@ -1,7 +1,3 @@
-using System.ClientModel;
-using Microsoft.Extensions.AI;
-using OpenAI;
-
 namespace McpMySite.Core.Embeddings;
 
 public static class EmbeddingGeneratorFactory

@@ -1,42 +1,26 @@
-using System.Threading.RateLimiting;
-using Azure.Monitor.OpenTelemetry.AspNetCore;
-using McpMySite.Core.Embeddings;
-using McpMySite.Server.Api;
-using McpMySite.Server.Index;
-using McpMySite.Server.Mcp;
-using McpMySite.Server.Options;
-using McpMySite.Server.Search;
-using Microsoft.AspNetCore.Cors.Infrastructure;
-using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.Extensions.Options;
-using ModelContextProtocol.AspNetCore;
-using ModelContextProtocol.Protocol;
-using OpenTelemetry;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Resources;
-using OpenTelemetry.Trace;
-
 var builder = WebApplication.CreateBuilder(args);
+var services = builder.Services;
+var configuration = builder.Configuration;
 
-builder.Services.Configure<IndexOptions>(builder.Configuration.GetSection(IndexOptions.SectionName));
-builder.Services.Configure<McpOptions>(builder.Configuration.GetSection(McpOptions.SectionName));
-builder.Services.Configure<SearchApiOptions>(builder.Configuration.GetSection(SearchApiOptions.SectionName));
-builder.Services.Configure<RateLimitOptions>(builder.Configuration.GetSection(RateLimitOptions.SectionName));
-builder.Services.Configure<TelemetryOptions>(builder.Configuration.GetSection(TelemetryOptions.SectionName));
-builder.Services.Configure<EmbeddingOptions>(builder.Configuration.GetSection(EmbeddingOptions.SectionName));
+services.Configure<IndexOptions>(configuration.GetSection(IndexOptions.SectionName));
+services.Configure<McpOptions>(configuration.GetSection(McpOptions.SectionName));
+services.Configure<SearchApiOptions>(configuration.GetSection(SearchApiOptions.SectionName));
+services.Configure<RateLimitOptions>(configuration.GetSection(RateLimitOptions.SectionName));
+services.Configure<TelemetryOptions>(configuration.GetSection(TelemetryOptions.SectionName));
+services.Configure<EmbeddingOptions>(configuration.GetSection(EmbeddingOptions.SectionName));
 
-var mcpOptions = builder.Configuration.GetSection(McpOptions.SectionName).Get<McpOptions>() ?? new McpOptions();
-var searchApiOptions = builder.Configuration.GetSection(SearchApiOptions.SectionName).Get<SearchApiOptions>() ?? new SearchApiOptions();
-var rateLimitOptions = builder.Configuration.GetSection(RateLimitOptions.SectionName).Get<RateLimitOptions>() ?? new RateLimitOptions();
+var mcpOptions = configuration.GetSection(McpOptions.SectionName).Get<McpOptions>() ?? new McpOptions();
+var searchApiOptions = configuration.GetSection(SearchApiOptions.SectionName).Get<SearchApiOptions>() ?? new SearchApiOptions();
+var rateLimitOptions = configuration.GetSection(RateLimitOptions.SectionName).Get<RateLimitOptions>() ?? new RateLimitOptions();
 
-builder.Services.AddHttpClient("index", client => client.Timeout = TimeSpan.FromMinutes(2));
-builder.Services.AddSingleton<IndexHolder>();
-builder.Services.AddSingleton<IndexLoader>();
-builder.Services.AddHostedService<IndexRefreshService>();
-builder.Services.AddSingleton<SiteSearchService>();
+services.AddHttpClient("index", client => client.Timeout = TimeSpan.FromMinutes(2));
+services.AddSingleton<IndexHolder>();
+services.AddSingleton<IndexLoader>();
+services.AddHostedService<IndexRefreshService>();
+services.AddSingleton<SiteSearchService>();
 
 // MCP: stateless streamable HTTP, tools only. Instructions come from the loaded index unless overridden.
-builder.Services.AddMcpServer(options =>
+services.AddMcpServer(options =>
     {
         options.ServerInfo = new Implementation
         {
@@ -57,8 +41,8 @@ builder.Services.AddMcpServer(options =>
     .WithTools<SiteTools>();
 
 // CORS policies always exist; an empty origin list simply allows no browser origin.
-builder.Services.AddCors();
-builder.Services.AddOptions<CorsOptions>().Configure<IOptions<SearchApiOptions>, IOptions<McpOptions>>((cors, searchApi, mcp) =>
+services.AddCors();
+services.AddOptions<CorsOptions>().Configure<IOptions<SearchApiOptions>, IOptions<McpOptions>>((cors, searchApi, mcp) =>
 {
     cors.AddPolicy(SearchEndpoints.CorsPolicy, policy => policy.WithOrigins(searchApi.Value.AllowedOrigins).WithMethods("GET").AllowAnyHeader());
     cors.AddPolicy(McpCorsPolicy, policy => policy
@@ -68,7 +52,7 @@ builder.Services.AddOptions<CorsOptions>().Configure<IOptions<SearchApiOptions>,
         .WithExposedHeaders("Mcp-Session-Id"));
 });
 
-builder.Services.AddRateLimiter(options =>
+services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddPolicy(SearchEndpoints.RateLimitPolicy, context =>
@@ -87,7 +71,7 @@ builder.Services.AddRateLimiter(options =>
 
 if (rateLimitOptions.UseForwardedHeaders)
 {
-    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    services.Configure<ForwardedHeadersOptions>(options =>
     {
         options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
         options.KnownIPNetworks.Clear();
@@ -97,7 +81,7 @@ if (rateLimitOptions.UseForwardedHeaders)
 
 // Telemetry: OpenTelemetry everywhere; Application Insights when its connection string is present,
 // otherwise OTLP when an endpoint is configured.
-var telemetry = builder.Services.AddOpenTelemetry()
+var telemetry = services.AddOpenTelemetry()
     .ConfigureResource(resource => resource.AddService(mcpOptions.ServerName))
     .WithTracing(tracing => tracing
         .AddSource(SiteSearchService.ActivitySourceName)
@@ -109,12 +93,12 @@ var telemetry = builder.Services.AddOpenTelemetry()
         .AddHttpClientInstrumentation()
         .AddRuntimeInstrumentation());
 
-var applicationInsights = builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
+var applicationInsights = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
 if (!string.IsNullOrWhiteSpace(applicationInsights))
 {
     telemetry.UseAzureMonitor(o => o.ConnectionString = applicationInsights);
 }
-else if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
+else if (!string.IsNullOrWhiteSpace(configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
 {
     telemetry.UseOtlpExporter();
 }
