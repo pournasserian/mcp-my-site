@@ -568,7 +568,9 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:DefaultLimit` | `10` | Results when `limit` is not given. |
 | `SearchApi:MaxLimit` | `20` | Upper bound for `limit`. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
-| `Ui:Enabled` | `true` | Serve the pages meant for people: the API reference at `/docs`. The OpenAPI document at `/openapi/v1.json` is served either way. |
+| `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the API reference at `/docs` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
+| `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
+| `Ui:StaleAfterDays` | `30` | The landing page and `/api/info` flag the index as stale when it is older than this. `0` turns the flag off. |
 | `RateLimiting:PermitPerMinute` | `60` | Requests per client IP per minute, shared across the MCP endpoint and the search API. Excess requests get `429`. |
 | `RateLimiting:UseForwardedHeaders` | `true` | Take the client IP from `X-Forwarded-For`, as set by Azure App Service and most reverse proxies. Set `false` when clients reach Kestrel directly. |
 | `Telemetry:LogQueryText` | `false` | Include query text in logs and trace tags. Off by default because queries can carry personal data. |
@@ -720,10 +722,40 @@ The client IP is taken from `X-Forwarded-For` when `RateLimiting:UseForwardedHea
 ```
 
 `lastError` holds the most recent load or refresh failure even while an older index is still being
-served, which makes it the first place to look when a new index did not appear. `GET /` returns a
-one-line text description with the configured paths.
+served, which makes it the first place to look when a new index did not appear.
 
-### 7.8 Telemetry
+`GET /api/info` returns everything the landing page shows, as JSON: the site (name, URL, description,
+main language), the index (build and load times, `stale`, page and chunk counts, store, embedding
+model, indexer version and the build `stats` described in section 16.1), the absolute URLs of every
+endpoint, whether MCP needs a key, and the server name and version. It answers `503` with the same
+shape and no `index` until an index is loaded, and it is in the OpenAPI document.
+
+### 7.8 The landing page
+
+With `Ui:Enabled` on, `GET /` is a page for people who open the server's URL:
+
+- the site's name, description and link;
+- how to connect: the MCP URL with a copy button and ready-made setup for Claude Code, Claude.ai and
+  Claude Desktop, ChatGPT, VS Code, Cursor and stdio-only clients. When `Mcp:ApiKey` is set it says a
+  key is needed (never the key) and leaves out the clients that cannot send one;
+- what is indexed: pages, approximate words, sections with their page counts, build date, newest page
+  and languages;
+- the last build: source, duration, pages fetched and skipped, errors, embeddings generated and cached,
+  chunks, embedding model and store;
+- the search API with an example and links to the OpenAPI document and reference;
+- a notice when the index is older than `Ui:StaleAfterDays`.
+
+The page is rendered on the server, so search engines and link previews see all of it; script only
+powers the copy buttons. It carries a description, a canonical link, Open Graph tags and schema.org
+`WebAPI` data. `robots.txt` keeps crawlers out of the MCP endpoint and `/api/`, and points them at
+`sitemap.xml`, which lists `/` and `/docs/` with the index build date. Until an index is loaded the
+page answers `503` and asks not to be indexed. With `Ui:Enabled` off, `/` is a short text summary and
+`robots.txt` disallows everything.
+
+Indexes from indexers older than this feature have no build statistics; the page then shows the
+manifest's page and chunk counts and build date only. Rebuild to get the rest.
+
+### 7.9 Telemetry
 
 The server is instrumented with OpenTelemetry (incoming requests, outgoing HTTP calls, runtime
 metrics) plus its own signals:
@@ -762,7 +794,8 @@ Query text is not logged or tagged unless `Telemetry:LogQueryText` is `true`.
 ## 8. Connecting MCP clients
 
 The endpoint is `https://<your-host>/mcp` (or whatever `Mcp:Path` is). Use the streamable HTTP
-transport. Examples below assume no API key; where a key is set, add the header shown.
+transport. Examples below assume no API key; where a key is set, add the header shown. The server's
+landing page (section 7.8) shows the same setup with its own URL filled in.
 
 **Claude Code**
 
@@ -1266,10 +1299,13 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 |---|---|---|---|
 | `POST {Mcp:Path}` | MCP JSON-RPC (default `/mcp`) | yes | optional |
 | `GET {SearchApi:Path}?q=&limit=` | Search API (default `/api/search`) | yes | no |
-| `GET /openapi/v1.json` | OpenAPI document for the search API | no | no |
+| `GET /api/info` | Site, index, build statistics and endpoint URLs as JSON | no | no |
+| `GET /openapi/v1.json` | OpenAPI document for the search API and `/api/info` | no | no |
 | `GET /docs` | Interactive API reference, when `Ui:Enabled` | no | no |
 | `GET /healthz` | Health and index status | no | no |
-| `GET /` | One-line description | no | no |
+| `GET /` | Landing page, when `Ui:Enabled`; otherwise a one-line text description | no | no |
+| `GET /robots.txt` | Crawler rules | no | no |
+| `GET /sitemap.xml` | Pages for search engines, when `Ui:Enabled` | no | no |
 
 ### 16.4 Glossary
 

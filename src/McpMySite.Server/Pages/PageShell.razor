@@ -1,0 +1,56 @@
+@* The document around every page: metadata for search engines and link previews, styles, footer. *@
+<!DOCTYPE html>
+<html lang="@Lang">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>@Title</title>
+    <meta name="description" content="@Description" />
+    <meta name="robots" content="@(Indexable ? "index, follow" : "noindex")" />
+    <link rel="canonical" href="@Canonical" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="@Title" />
+    <meta property="og:description" content="@Description" />
+    <meta property="og:url" content="@Canonical" />
+    @if (SiteName is not null)
+    {
+        <meta property="og:site_name" content="@SiteName" />
+    }
+    <meta name="twitter:card" content="summary" />
+    @if (JsonLd is not null)
+    {
+        @* Written as one markup string: the renderer would encode the + in the type attribute. *@
+        @((MarkupString)$"<script type=\"application/ld+json\">{JsonLd}</script>")
+    }
+    <style>@((MarkupString)PageAssets.Css)</style>
+</head>
+<body>
+    @ChildContent
+    <footer>
+        <p>Served by <a href="https://github.com/pournasserian/mcp-my-site">mcp-my-site</a> @Version.</p>
+    </footer>
+    <script>@((MarkupString)PageAssets.Script)</script>
+</body>
+</html>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Description { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public string Canonical { get; set; } = string.Empty;
+
+    [Parameter] public string Lang { get; set; } = "en";
+
+    [Parameter] public string? SiteName { get; set; }
+
+    /// <summary>Serialized schema.org data. Must come from System.Text.Json, whose default encoder escapes &lt; and &gt;.</summary>
+    [Parameter] public string? JsonLd { get; set; }
+
+    [Parameter] public bool Indexable { get; set; } = true;
+
+    [Parameter] public string Version { get; set; } = string.Empty;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
