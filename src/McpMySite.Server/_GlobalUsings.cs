@@ -1,7 +1,3 @@
-global using System.ComponentModel;
-global using System.Diagnostics;
-global using System.Diagnostics.Metrics;
-global using System.Threading.RateLimiting;
 global using Azure.Monitor.OpenTelemetry.AspNetCore;
 global using McpMySite.Core;
 global using McpMySite.Core.Embeddings;
@@ -25,3 +21,7 @@ global using OpenTelemetry;
 global using OpenTelemetry.Metrics;
 global using OpenTelemetry.Resources;
 global using OpenTelemetry.Trace;
+global using System.ComponentModel;
+global using System.Diagnostics;
+global using System.Diagnostics.Metrics;
+global using System.Threading.RateLimiting;
