@@ -1,7 +1,7 @@
-using System.CommandLine;
 using McpMySite.Core.Stores;
 using McpMySite.Indexer.Build;
 using Microsoft.Extensions.AI;
+using System.CommandLine;
 
 var root = new RootCommand("Crawls a website and builds the search index served by the MCP my site server.");
 root.Subcommands.Add(BuildCommand());

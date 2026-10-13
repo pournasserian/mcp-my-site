@@ -1,7 +1,7 @@
-using System.Security.Cryptography;
-using System.Text;
 using McpMySite.Core.Search;
 using Microsoft.Data.Sqlite;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace McpMySite.Indexer.Embeddings;
 

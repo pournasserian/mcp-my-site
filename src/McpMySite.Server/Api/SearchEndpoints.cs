@@ -1,6 +1,3 @@
-using McpMySite.Server.Search;
-using Microsoft.AspNetCore.Mvc;
-
 namespace McpMySite.Server.Api;
 
 /// <summary>HTTP search endpoint for the site's own search box. Same search service as the MCP tool.</summary>

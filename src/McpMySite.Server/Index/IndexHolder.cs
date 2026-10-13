@@ -1,5 +1,3 @@
-using McpMySite.Core.Stores;
-
 namespace McpMySite.Server.Index;
 
 /// <summary>

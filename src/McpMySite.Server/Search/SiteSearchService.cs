@@ -1,9 +1,3 @@
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using McpMySite.Core.Embeddings;
-using McpMySite.Core.Model;
-using Microsoft.Extensions.AI;
-
 namespace McpMySite.Server.Search;
 
 /// <summary>
