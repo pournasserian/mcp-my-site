@@ -1,8 +1,3 @@
-using McpMySite.Core.Search;
-using Microsoft.Data.Sqlite;
-using System.Globalization;
-using System.Text.Json;
-
 namespace McpMySite.Core.Stores.Sqlite;
 
 /// <summary>

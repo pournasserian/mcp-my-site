@@ -30,7 +30,7 @@ public sealed class Bm25Index
             {
                 if (!_postings.TryGetValue(term, out var list))
                 {
-                    _postings[term] = list = new List<(int, int)>();
+                    _postings[term] = list = [];
                 }
 
                 list.Add((i, tf));
@@ -70,11 +70,10 @@ public sealed class Bm25Index
             }
         }
 
-        return scores
+        return [.. scores
             .OrderByDescending(kv => kv.Value)
             .ThenBy(kv => kv.Key)
             .Take(limit)
-            .Select(kv => (kv.Key, kv.Value))
-            .ToList();
+            .Select(kv => (kv.Key, kv.Value))];
     }
 }

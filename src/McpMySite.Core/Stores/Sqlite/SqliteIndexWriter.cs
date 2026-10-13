@@ -1,7 +1,3 @@
-using McpMySite.Core.Search;
-using Microsoft.Data.Sqlite;
-using System.Text.Json;
-
 namespace McpMySite.Core.Stores.Sqlite;
 
 public sealed class SqliteIndexWriter : IIndexWriter

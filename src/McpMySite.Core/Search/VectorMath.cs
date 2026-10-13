@@ -1,6 +1,3 @@
-using System.Numerics;
-using System.Runtime.InteropServices;
-
 namespace McpMySite.Core.Search;
 
 public static class VectorMath

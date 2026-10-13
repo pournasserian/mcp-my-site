@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <RootNamespace>McpMySite.Core</RootNamespace>
@@ -20,6 +20,23 @@
 
   <ItemGroup>
     <Using Include="McpMySite.Core.Model" />
+    <Using Include="System.Net" />
+    <Using Include="System.Text.RegularExpressions" />
+    <Using Include="System.Globalization" />
+    <Using Include="System.Text" />
+    <Using Include="System.Numerics" />
+    <Using Include="System.Runtime.InteropServices" />
+    <Using Include="McpMySite.Core.Search" />
+    <Using Include="System.Text.Json" />
+    <Using Include="McpMySite.Core.Search" />
+    <Using Include="System.Text.Json" />
+    <Using Include="Microsoft.Data.Sqlite" />
+    <Using Include="McpMySite.Core.Stores.Json" />
+    <Using Include="McpMySite.Core.Stores.Sqlite" />
+    <Using Include="System.Text.Json.Serialization" />
+    <Using Include="Microsoft.Extensions.AI" />
+    <Using Include="OpenAI" />
+    <Using Include="System.ClientModel" />
   </ItemGroup>
 
 </Project>

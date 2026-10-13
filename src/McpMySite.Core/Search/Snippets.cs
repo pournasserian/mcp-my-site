@@ -1,7 +1,3 @@
-using System.Net;
-using System.Text;
-using System.Text.RegularExpressions;
-
 namespace McpMySite.Core.Search;
 
 /// <summary>Builds a short excerpt around the first query term and marks every matched term.</summary>

@@ -1,6 +1,3 @@
-using McpMySite.Core.Search;
-using System.Text.Json;
-
 namespace McpMySite.Core.Stores.Json;
 
 public sealed class JsonIndexWriter : IIndexWriter
