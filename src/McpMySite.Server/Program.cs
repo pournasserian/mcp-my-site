@@ -44,7 +44,9 @@ services.AddMcpServer(options =>
             return Task.CompletedTask;
         };
     })
-    .WithTools<SiteTools>();
+    .WithTools<SiteTools>()
+    .WithRequestFilters(filters => filters.AddListToolsFilter(next => async (context, cancellationToken) =>
+        SiteTools.DescribeSite(await next(context, cancellationToken), context.Services?.GetService<IndexHolder>()?.Current?.Manifest)));
 
 // CORS policies always exist; an empty origin list simply allows no browser origin.
 services.AddCors();

@@ -607,6 +607,11 @@ URL, and the server picks it up within the poll interval.
   it); the response is a single JSON or SSE message.
 - Capabilities: tools only. No resources, no prompts.
 - `initialize` returns the server name and version and the instructions described in section 6.8.
+- `tools/list` describes `search` with the loaded site's name, URL, description and page count, so a
+  model knows which site the server covers even when its client ignores the instructions.
+- The tool shapes follow the `search` and `fetch` contract ChatGPT uses for connectors and deep
+  research: every search result has an `id`, and `fetch` takes that `id` and returns the page as
+  `text`. Other clients can keep passing a `url`.
 
 **Tool `search`**
 
@@ -622,7 +627,8 @@ Returns structured content:
   "query": "reset password",
   "keywordOnly": false,
   "results": [
-    { "title": "Account settings", "url": "https://example.com/help/account",
+    { "id": "https://example.com/help/account",
+      "title": "Account settings", "url": "https://example.com/help/account",
       "snippet": "…plain text excerpt around the first match…",
       "section": "Security > Passwords", "score": 0.0325 }
   ]
@@ -630,17 +636,20 @@ Returns structured content:
 ```
 
 `keywordOnly` is `true` when the query could not be embedded and the result came from keyword search
-alone. Scores are reciprocal-rank-fusion scores, useful for ordering, not as probabilities.
+alone. Scores are reciprocal-rank-fusion scores, useful for ordering, not as probabilities. `id` is
+what to pass to `fetch`; today it is the page URL.
 
 **Tool `fetch`**
 
 | Parameter | Type | Meaning |
 |---|---|---|
-| `url` | string, required | A page URL, normally taken from a `search` result. Scheme, host case, trailing slash and fragment differences are tolerated. |
+| `id` | string, optional | The `id` of a `search` result. |
+| `url` | string, optional | A page URL, as an alternative to `id`. Scheme, host case, trailing slash and fragment differences are tolerated. |
 
-Returns `url`, `title`, `description`, `language`, `modified` and the full page as `markdown`. An
-unknown URL is a tool error ("No indexed page at ..."), not a protocol error, so the model can recover
-by searching again.
+Pass one of the two; `id` wins when both are given. Returns `id`, `url`, `title`, the full page as
+Markdown in `text`, `description`, `language` and `modified`. Passing neither, or an unknown page, is
+a tool error ("No indexed page at ..."), not a protocol error, so the model can recover by searching
+again.
 
 Both tools are annotated read-only, idempotent and closed-world. The same response is also included
 as a JSON text block for clients that ignore structured content.
