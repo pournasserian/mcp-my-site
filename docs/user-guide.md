@@ -576,7 +576,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:DefaultLimit` | `10` | Results when `limit` is not given. |
 | `SearchApi:MaxLimit` | `20` | Upper bound for `limit`. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
-| `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the MCP playground at `/playground`, the API reference at `/docs` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
+| `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the MCP playground at `/playground`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
 | `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
 | `Ui:StaleAfterDays` | `30` | The landing page and `/api/info` flag the index as stale when it is older than this. `0` turns the flag off. |
 | `RateLimiting:PermitPerMinute` | `60` | Requests per client IP per minute, shared across the MCP endpoint and the search API. Excess requests get `429`. |
@@ -759,6 +759,12 @@ powers the copy buttons. It carries a description, a canonical link, Open Graph 
 `sitemap.xml`, which lists `/`, `/playground` and `/docs/` with the index build date. Until an index is loaded the
 page answers `503` and asks not to be indexed. With `Ui:Enabled` off, `/` is a short text summary and
 `robots.txt` disallows everything.
+
+`GET /llms.txt` follows the [llms.txt](https://llmstxt.org/) convention: the site name and
+description, a line on how to reach this server over MCP and HTTP, then every indexed page as a
+Markdown link with its description, grouped under the same section names as the landing page and
+newest first. It is built once per loaded index and kept in memory. It describes the site, so you
+can also publish a copy at your site's own `/llms.txt`.
 
 Indexes from indexers older than this feature have no build statistics; the page then shows the
 manifest's page and chunk counts and build date only. Rebuild to get the rest.
@@ -1328,6 +1334,7 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 | `GET /healthz` | Health and index status | no | no |
 | `GET /` | Landing page, when `Ui:Enabled`; otherwise a one-line text description | no | no |
 | `GET /playground` | MCP playground, when `Ui:Enabled` | no | no |
+| `GET /llms.txt` | The indexed pages as a Markdown list for language models, when `Ui:Enabled` | no | no |
 | `GET /robots.txt` | Crawler rules | no | no |
 | `GET /sitemap.xml` | Pages for search engines, when `Ui:Enabled` | no | no |
 

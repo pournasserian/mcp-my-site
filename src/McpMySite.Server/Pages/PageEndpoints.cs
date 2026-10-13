@@ -42,6 +42,16 @@ public static class PageEndpoints
             return new RazorComponentResult<PlaygroundPage>(new { Info = info, BaseUrl = baseUrl, EndpointPath = request.PathBase + mcp.Value.Path });
         }).ExcludeFromDescription();
 
+        app.MapGet("/llms.txt", async (HttpRequest request, IndexHolder holder, LlmsTxt llms, IOptions<McpOptions> mcp, IOptions<SearchApiOptions> searchApi, IOptions<UiOptions> options, CancellationToken cancellationToken) =>
+        {
+            var baseUrl = SiteInfo.BaseUrl(request, options.Value);
+            var info = SiteInfo.Create(holder, mcp.Value, searchApi.Value, options.Value, baseUrl, DateTimeOffset.UtcNow);
+            var text = await llms.GetAsync(info, baseUrl, cancellationToken);
+            return text is null
+                ? Results.Text("No index is loaded yet.\n", "text/plain; charset=utf-8", statusCode: StatusCodes.Status503ServiceUnavailable)
+                : Results.Text(text, "text/plain; charset=utf-8");
+        }).ExcludeFromDescription();
+
         app.MapGet("/sitemap.xml", (HttpRequest request, IndexHolder holder, IOptions<UiOptions> options) =>
             Results.Text(Sitemap(SiteInfo.BaseUrl(request, options.Value), holder.Current?.Manifest.BuiltAt), "application/xml; charset=utf-8"))
             .ExcludeFromDescription();

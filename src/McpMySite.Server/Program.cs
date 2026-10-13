@@ -22,6 +22,7 @@ services.AddHostedService<IndexRefreshService>();
 services.AddSingleton<SiteSearchService>();
 services.AddSiteOpenApi();
 services.AddRazorComponents();
+services.AddSingleton<LlmsTxt>();
 
 // Numbers are plain JSON numbers; the web default also accepts strings, which would make every OpenAPI number "integer or string".
 services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
