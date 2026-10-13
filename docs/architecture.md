@@ -455,8 +455,9 @@ knows what to fetch.
 
 **Configuration.** Both apps use the standard .NET layering: `appsettings.json`,
 `appsettings.{Environment}.json`, user secrets in Development, environment variables (`Section__Key`),
-and for the indexer explicit `--set Section:Key=Value` overrides plus a few convenience flags. The
-indexer resolves relative paths against the folder that holds its config file, so a site repository
+and for the indexer explicit `--set Section:Key=Value` overrides plus a few convenience flags. Under
+all of these the indexer loads `appsettings.defaults.json`, shipped next to the tool with every
+setting and its default, so a site's own file only needs what differs. The indexer resolves relative paths against the folder that holds its config file, so a site repository
 can carry its indexer settings next to the site.
 
 **Secrets.** Only the embeddings key (and the optional MCP API key) are secret. Both are read from
@@ -537,6 +538,7 @@ src/
     Chunking/                      MarkdownChunker
     Embeddings/                    EmbeddingCache, BatchEmbedder
     Build/                         IndexBuilder, SiteOutline, BuildReport
+    appsettings.defaults.json      every setting and its default, shipped with the tool
   McpMySite.Server/
     Program.cs                     pipeline and endpoint wiring
     Options/                       strongly typed settings

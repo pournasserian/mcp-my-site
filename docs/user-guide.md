@@ -248,7 +248,8 @@ mcpmysite search <query> [--config <file>] [--environment <name>] [--index <dir>
 ```
 
 **`init`** writes a starter `appsettings.json` with every setting and its default, plus a `Logging`
-section. It refuses to overwrite an existing file.
+section. It refuses to overwrite an existing file. It is a convenience: a file with only `Site:Url` in
+it works too, because every other setting falls back to the shipped defaults (section 6.2).
 
 **`build`** loads the configuration (section 6.2), applies the command-line overrides below, and
 performs a full rebuild. Relative paths (`Output:Directory`, `Cache:Path`, `Source:Folder`) resolve
@@ -287,6 +288,9 @@ Exit codes:
 The indexer is configured exactly like an ASP.NET Core app. Settings are read from these layers, each
 overriding the one before:
 
+0. `appsettings.defaults.json`, shipped next to the tool with every setting and its default. Read it
+   to see what can be set; do not edit it, because updating the tool replaces it. The same file is in
+   the repository at `src/McpMySite.Indexer/appsettings.defaults.json`;
 1. `appsettings.json` (the file named by `--config`);
 2. `appsettings.{Environment}.json` in the same folder, for example `appsettings.Staging.json` with a
    lower `Crawl:MaxPages` for a smoke test;
@@ -302,7 +306,9 @@ If the site itself is a .NET project, its own `appsettings.json` lives in the sa
 the indexer's file in a folder of its own, such as `mcp/appsettings.json`, and pass
 `--config mcp/appsettings.json`; relative paths then resolve against `mcp/`.
 
-Every key is optional except `Site:Url`.
+Every key is optional except `Site:Url`, so your `appsettings.json` only needs the keys you change.
+List values such as `Crawl:Exclude` merge by position across layers rather than replacing each other,
+which is why their shipped defaults are empty.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|

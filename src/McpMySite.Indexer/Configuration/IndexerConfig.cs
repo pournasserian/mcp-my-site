@@ -12,6 +12,9 @@ public sealed class IndexerConfig
 {
     public const string DefaultFileName = "appsettings.json";
 
+    /// <summary>Shipped next to the tool with every setting and its default. Not named appsettings.json so it cannot be mistaken for a site's config.</summary>
+    public const string DefaultsFileName = "appsettings.defaults.json";
+
     public SiteConfig Site { get; set; } = new();
 
     public SourceConfig Source { get; set; } = new();

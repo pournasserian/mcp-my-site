@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using McpMySite.Indexer.Configuration;
 
 namespace McpMySite.Tests.Indexer;
@@ -72,6 +73,35 @@ public class ConfigLoaderTests
         Assert.Equal("sqlite", loaded.Config.Output.Store);
         Assert.Equal(SourceType.Crawl, loaded.Config.Source.Type);
         Assert.Equal(FolderUrlStyle.Clean, loaded.Config.Source.FolderUrlStyle);
+        loaded.Config.Validate();
+    }
+
+    [Fact]
+    public void ShippedDefaultsFileMatchesCodeDefaults()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, IndexerConfig.DefaultsFileName);
+        Assert.True(File.Exists(path), $"{path} was not copied to the output folder.");
+
+        var shipped = JsonNode.Parse(File.ReadAllText(path));
+        var expected = JsonNode.Parse(IndexerConfigLoader.ToAppSettingsJson(new IndexerConfig()));
+        Assert.True(JsonNode.DeepEquals(expected, shipped), $"{IndexerConfig.DefaultsFileName} is out of date. Expected:\n{expected}");
+    }
+
+    [Fact]
+    public async Task ShippedDefaultsAreTheLowestLayer()
+    {
+        var folder = NewFolder();
+        await File.WriteAllTextAsync(Path.Combine(folder, "appsettings.json"), """
+            { "Site": { "Url": "https://example.test" }, "Logging": { "LogLevel": { "Default": "Debug" } } }
+            """);
+
+        var loaded = IndexerConfigLoader.Load(Path.Combine(folder, "appsettings.json"), "Production");
+
+        Assert.Equal("https://example.test", loaded.Config.Site.Url);
+        Assert.Equal("Debug", loaded.Configuration["Logging:LogLevel:Default"]);
+        // Only the shipped file sets this key, so seeing it proves that file was layered in.
+        Assert.Equal("Warning", loaded.Configuration["Logging:LogLevel:System.Net.Http"]);
+        Assert.Equal(1000, loaded.Config.Crawl.MaxPages);
         loaded.Config.Validate();
     }
 

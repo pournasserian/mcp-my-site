@@ -7,8 +7,8 @@ namespace McpMySite.Indexer.Configuration;
 
 /// <summary>
 /// Builds the indexer configuration the same way an ASP.NET Core app does, in increasing precedence:
-/// appsettings.json, appsettings.{Environment}.json, user secrets (Development only), environment variables
-/// (Crawl__MaxPages=50), then explicit --set Key=Value overrides.
+/// appsettings.defaults.json shipped with the tool, the site's appsettings.json, appsettings.{Environment}.json,
+/// user secrets (Development only), environment variables (Crawl__MaxPages=50), then explicit --set Key=Value overrides.
 /// </summary>
 public static class IndexerConfigLoader
 {
@@ -30,6 +30,16 @@ public static class IndexerConfigLoader
         var environmentName = ResolveEnvironment(environment);
 
         var builder = new ConfigurationBuilder().SetBasePath(baseDirectory);
+
+        // Optional because the code defaults in IndexerConfig apply anyway; the file is there to be read.
+        builder.AddJsonFile(source =>
+        {
+            source.Path = Path.Combine(AppContext.BaseDirectory, IndexerConfig.DefaultsFileName);
+            source.Optional = true;
+            source.ReloadOnChange = false;
+            source.ResolveFileProvider();
+        });
+
         if (fileExists)
         {
             var name = Path.GetFileNameWithoutExtension(path);
