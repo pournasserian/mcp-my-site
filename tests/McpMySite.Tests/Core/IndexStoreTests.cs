@@ -1,7 +1,3 @@
-using McpMySite.Core;
-using McpMySite.Core.Model;
-using McpMySite.Core.Stores;
-
 namespace McpMySite.Tests.Core;
 
 /// <summary>The same behaviour is expected from every store, so each test runs against both.</summary>

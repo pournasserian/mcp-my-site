@@ -30,4 +30,12 @@
     <InternalsVisibleTo Include="McpMySite.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="McpMySite.Core" />
+    <Using Include="McpMySite.Core.Model" />
+    <Using Include="McpMySite.Core.Embeddings" />
+    <Using Include="McpMySite.Indexer.Configuration" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
 </Project>

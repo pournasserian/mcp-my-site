@@ -1,15 +1,10 @@
 using System.Diagnostics;
 using System.Reflection;
-using McpMySite.Core;
-using McpMySite.Core.Embeddings;
-using McpMySite.Core.Model;
 using McpMySite.Core.Stores;
 using McpMySite.Indexer.Chunking;
-using McpMySite.Indexer.Configuration;
 using McpMySite.Indexer.Embeddings;
 using McpMySite.Indexer.Extraction;
 using McpMySite.Indexer.Sources;
-using Microsoft.Extensions.Logging;
 
 namespace McpMySite.Indexer.Build;
 

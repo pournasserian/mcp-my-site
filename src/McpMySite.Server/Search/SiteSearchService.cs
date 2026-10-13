@@ -2,10 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using McpMySite.Core.Embeddings;
 using McpMySite.Core.Model;
-using McpMySite.Server.Index;
-using McpMySite.Server.Options;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Options;
 
 namespace McpMySite.Server.Search;
 

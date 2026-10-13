@@ -24,4 +24,10 @@
     <InternalsVisibleTo Include="McpMySite.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="McpMySite.Server.Index" />
+    <Using Include="McpMySite.Server.Options" />
+    <Using Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
 </Project>

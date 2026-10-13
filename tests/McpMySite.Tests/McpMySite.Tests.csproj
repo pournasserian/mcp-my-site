@@ -22,6 +22,9 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="McpMySite.Core" />
+    <Using Include="McpMySite.Core.Model" />
+    <Using Include="McpMySite.Core.Stores" />
   </ItemGroup>
 
 </Project>

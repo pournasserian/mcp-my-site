@@ -1,8 +1,6 @@
 using McpMySite.Core;
 using McpMySite.Core.Model;
 using McpMySite.Core.Stores;
-using McpMySite.Server.Options;
-using Microsoft.Extensions.Options;
 
 namespace McpMySite.Server.Index;
 

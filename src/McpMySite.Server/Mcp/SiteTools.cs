@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using McpMySite.Server.Index;
 using McpMySite.Server.Search;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;

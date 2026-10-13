@@ -1,6 +1,4 @@
-using McpMySite.Core.Model;
 using McpMySite.Core.Search;
-using McpMySite.Core.Stores;
 
 namespace McpMySite.Tests.Core;
 

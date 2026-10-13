@@ -1,8 +1,5 @@
-using McpMySite.Server.Index;
-using McpMySite.Server.Options;
 using McpMySite.Server.Search;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 
 namespace McpMySite.Server.Api;
 
