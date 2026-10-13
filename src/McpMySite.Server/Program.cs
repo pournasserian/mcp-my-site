@@ -7,17 +7,23 @@ services.Configure<McpOptions>(configuration.GetSection(McpOptions.SectionName))
 services.Configure<SearchApiOptions>(configuration.GetSection(SearchApiOptions.SectionName));
 services.Configure<RateLimitOptions>(configuration.GetSection(RateLimitOptions.SectionName));
 services.Configure<TelemetryOptions>(configuration.GetSection(TelemetryOptions.SectionName));
+services.Configure<UiOptions>(configuration.GetSection(UiOptions.SectionName));
 services.Configure<EmbeddingOptions>(configuration.GetSection(EmbeddingOptions.SectionName));
 
 var mcpOptions = configuration.GetSection(McpOptions.SectionName).Get<McpOptions>() ?? new McpOptions();
 var searchApiOptions = configuration.GetSection(SearchApiOptions.SectionName).Get<SearchApiOptions>() ?? new SearchApiOptions();
 var rateLimitOptions = configuration.GetSection(RateLimitOptions.SectionName).Get<RateLimitOptions>() ?? new RateLimitOptions();
+var uiOptions = configuration.GetSection(UiOptions.SectionName).Get<UiOptions>() ?? new UiOptions();
 
 services.AddHttpClient("index", client => client.Timeout = TimeSpan.FromMinutes(2));
 services.AddSingleton<IndexHolder>();
 services.AddSingleton<IndexLoader>();
 services.AddHostedService<IndexRefreshService>();
 services.AddSingleton<SiteSearchService>();
+services.AddSiteOpenApi();
+
+// Numbers are plain JSON numbers; the web default also accepts strings, which would make every OpenAPI number "integer or string".
+services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
 
 // MCP: stateless streamable HTTP, tools only. Instructions come from the loaded index unless overridden.
 services.AddMcpServer(options =>
@@ -147,6 +153,8 @@ if (searchApiOptions.Enabled)
     app.MapSearchApi(searchApiOptions);
 }
 
+app.MapSiteOpenApi(uiOptions);
+
 app.MapGet("/healthz", (IndexHolder holder) =>
 {
     var manifest = holder.Current?.Manifest;
@@ -167,7 +175,7 @@ app.MapGet("/", (IndexHolder holder) =>
     var manifest = holder.Current?.Manifest;
     var name = manifest?.SiteName ?? manifest?.SiteUrl ?? "no index loaded";
     return Results.Text($"mcp-my-site for {name}\nMCP endpoint: {mcpOptions.Path}\nSearch API: {(searchApiOptions.Enabled ? searchApiOptions.Path + "?q=..." : "disabled")}\n");
-});
+}).ExcludeFromDescription();
 
 app.Run();
 

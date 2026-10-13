@@ -50,6 +50,14 @@ public sealed class SearchApiOptions
     public int MaxQueryLength { get; set; } = 500;
 }
 
+public sealed class UiOptions
+{
+    public const string SectionName = "Ui";
+
+    /// <summary>Serve the pages meant for people, such as the API reference. The OpenAPI document is always served.</summary>
+    public bool Enabled { get; set; } = true;
+}
+
 public sealed class RateLimitOptions
 {
     public const string SectionName = "RateLimiting";

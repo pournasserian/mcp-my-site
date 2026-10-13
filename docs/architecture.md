@@ -77,7 +77,7 @@ flowchart TB
 |---|---|---|
 | `McpMySite.Core` | Everything both apps need: manifest, page and chunk records, `IIndexStore`/`IIndexWriter`, the JSON and SQLite stores, BM25, vector maths, rank fusion, snippets, the embedding generator factory | Microsoft.Extensions.AI (+ .OpenAI), OpenAI, Microsoft.Data.Sqlite |
 | `McpMySite.Indexer` | The `mcpmysite` tool. Owns sources, extraction, chunking, the embedding cache, safety checks and the run report | AngleSharp (HTML), ReverseMarkdown (HTML to Markdown), System.CommandLine, Microsoft.Extensions.Hosting (configuration and logging) |
-| `McpMySite.Server` | Hosts the MCP server and the search API, loads and refreshes the index, rate limits, exports telemetry | ModelContextProtocol.AspNetCore, OpenTelemetry (+ Azure Monitor exporter) |
+| `McpMySite.Server` | Hosts the MCP server and the search API, loads and refreshes the index, rate limits, exports telemetry | ModelContextProtocol.AspNetCore, Microsoft.AspNetCore.OpenApi, Scalar.AspNetCore (API reference page), OpenTelemetry (+ Azure Monitor exporter) |
 | `McpMySite.Tests` | Unit tests, store contract tests, the web app booted in-process | xunit, Microsoft.AspNetCore.Mvc.Testing |
 
 Core has no dependency on ASP.NET Core, Azure or the crawler libraries, so a future store or
@@ -333,6 +333,7 @@ flowchart TB
     Key --> MCP["MapMcp<br/>ModelContextProtocol.AspNetCore<br/>stateless"]
     Key --> SAPI["GET /api/search<br/>minimal API"]
     FH --> H["GET /healthz, GET /"]
+    FH --> Docs["GET /openapi/v1.json<br/>GET /docs (Scalar)"]
 
     MCP --> Tools["SiteTools<br/>search, fetch"]
     Tools --> SS["SiteSearchService"]
@@ -352,7 +353,8 @@ flowchart TB
 | `IndexRefreshService` | Loads once at startup and then on a timer. |
 | `SiteSearchService` | The single search path: embed query (with fallback), call the store, emit metrics and spans. Caches the embedding generator per (model, dimensions). |
 | `SiteTools` | The two MCP tools. Thin: validate arguments, call the service, shape the result, turn "no index" into a tool error. |
-| `SearchEndpoints` | The HTTP search endpoint with its validation and status codes. |
+| `SearchEndpoints` | The HTTP search endpoint with its validation, status codes and OpenAPI metadata. |
+| `OpenApiSetup` | The OpenAPI document (titled after the loaded site, MCP excluded) and the Scalar reference page. |
 | `Program` | Wiring: options, CORS policies bound from options, rate limiter partitioned by IP, API key middleware, telemetry exporters, endpoints. |
 
 ### 5.2 Startup and hot swap

@@ -552,6 +552,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:DefaultLimit` | `10` | Results when `limit` is not given. |
 | `SearchApi:MaxLimit` | `20` | Upper bound for `limit`. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
+| `Ui:Enabled` | `true` | Serve the pages meant for people: the API reference at `/docs`. The OpenAPI document at `/openapi/v1.json` is served either way. |
 | `RateLimiting:PermitPerMinute` | `60` | Requests per client IP per minute, shared across the MCP endpoint and the search API. Excess requests get `429`. |
 | `RateLimiting:UseForwardedHeaders` | `true` | Take the client IP from `X-Forwarded-For`, as set by Azure App Service and most reverse proxies. Set `false` when clients reach Kestrel directly. |
 | `Telemetry:LogQueryText` | `false` | Include query text in logs and trace tags. Off by default because queries can carry personal data. |
@@ -663,6 +664,12 @@ GET /api/search?q=<text>&limit=<n>
 inserted into the page as HTML. `title` and `description` are plain text and must be escaped by the
 caller. Search runs on submit only; there is no search-as-you-type endpoint, and the per-IP rate limit
 is sized for that.
+
+The API is described by an OpenAPI 3.1 document at `/openapi/v1.json`, titled after the loaded site.
+Point a client generator or an API tool at it. `/docs` renders the same document as an interactive
+reference (Scalar) where you can try queries; its script is served by the server itself, so the page
+works without access to a CDN. Set `Ui:Enabled` to `false` to drop the page. The MCP endpoint is not
+part of the document; MCP clients discover its tools through `tools/list`.
 
 ### 7.6 Rate limiting
 
@@ -1233,6 +1240,8 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 |---|---|---|---|
 | `POST {Mcp:Path}` | MCP JSON-RPC (default `/mcp`) | yes | optional |
 | `GET {SearchApi:Path}?q=&limit=` | Search API (default `/api/search`) | yes | no |
+| `GET /openapi/v1.json` | OpenAPI document for the search API | no | no |
+| `GET /docs` | Interactive API reference, when `Ui:Enabled` | no | no |
 | `GET /healthz` | Health and index status | no | no |
 | `GET /` | One-line description | no | no |
 
