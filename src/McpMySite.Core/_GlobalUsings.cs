@@ -1,0 +1,16 @@
+global using System.ClientModel;
+global using System.Globalization;
+global using System.Net;
+global using System.Numerics;
+global using System.Runtime.InteropServices;
+global using System.Text;
+global using System.Text.Json;
+global using System.Text.Json.Serialization;
+global using System.Text.RegularExpressions;
+global using McpMySite.Core.Model;
+global using McpMySite.Core.Search;
+global using McpMySite.Core.Stores.Json;
+global using McpMySite.Core.Stores.Sqlite;
+global using Microsoft.Data.Sqlite;
+global using Microsoft.Extensions.AI;
+global using OpenAI;

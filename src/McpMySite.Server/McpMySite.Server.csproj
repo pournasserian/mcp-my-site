@@ -24,35 +24,4 @@
     <InternalsVisibleTo Include="McpMySite.Tests" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Using Include="McpMySite.Server.Index" />
-    <Using Include="McpMySite.Server.Options" />
-    <Using Include="Microsoft.Extensions.Options" />
-    <Using Include="System.Threading.RateLimiting" />
-    <Using Include="Azure.Monitor.OpenTelemetry.AspNetCore" />
-    <Using Include="McpMySite.Core.Embeddings" />
-    <Using Include="McpMySite.Server.Api" />
-    <Using Include="McpMySite.Server.Mcp" />
-    <Using Include="McpMySite.Server.Search" />
-    <Using Include="Microsoft.AspNetCore.Cors.Infrastructure" />
-    <Using Include="Microsoft.AspNetCore.HttpOverrides" />
-    <Using Include="ModelContextProtocol.AspNetCore" />
-    <Using Include="ModelContextProtocol.Protocol" />
-    <Using Include="OpenTelemetry" />
-    <Using Include="OpenTelemetry.Metrics" />
-    <Using Include="OpenTelemetry.Resources" />
-    <Using Include="OpenTelemetry.Trace" />
-    <Using Include="McpMySite.Core.Stores" />
-    <Using Include="McpMySite.Core" />
-    <Using Include="McpMySite.Core.Model" />
-    <Using Include="McpMySite.Core.Stores" />
-    <Using Include="Microsoft.AspNetCore.Mvc" />
-    <Using Include="System.Diagnostics" />
-    <Using Include="System.Diagnostics.Metrics" />
-    <Using Include="Microsoft.Extensions.AI" />
-    <Using Include="ModelContextProtocol" />
-    <Using Include="ModelContextProtocol.Server" />
-    <Using Include="System.ComponentModel" />
-  </ItemGroup>
-
 </Project>
