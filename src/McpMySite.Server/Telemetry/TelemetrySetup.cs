@@ -55,10 +55,13 @@ public static class TelemetrySetup
     /// and the last log records before a shutdown or a crash are the ones most worth having.
     /// </summary>
     public static void FlushTelemetryOnShutdown(this WebApplication app) =>
-        app.Lifetime.ApplicationStopped.Register(() =>
-        {
-            app.Services.GetService<LoggerProvider>()?.ForceFlush();
-            app.Services.GetService<TracerProvider>()?.ForceFlush();
-            app.Services.GetService<MeterProvider>()?.ForceFlush();
-        });
+        app.Lifetime.ApplicationStopped.Register(() => FlushTelemetry(app.Services));
+
+    /// <summary>Sends everything the log, trace and metric pipelines hold, and returns once it is sent.</summary>
+    public static void FlushTelemetry(IServiceProvider services)
+    {
+        services.GetService<LoggerProvider>()?.ForceFlush();
+        services.GetService<TracerProvider>()?.ForceFlush();
+        services.GetService<MeterProvider>()?.ForceFlush();
+    }
 }

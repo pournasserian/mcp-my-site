@@ -207,7 +207,7 @@ public class ServerExportTests
         using (factory)
         using (client)
         {
-            await ExerciseAsync(client);
+            await ExerciseAsync(factory, client);
         }
 
         Assert.True(collector.Received("/v1/traces", "mcpmysite.search"), $"No search span. Received: {string.Join(", ", collector.Paths)}");
@@ -236,7 +236,7 @@ public class ServerExportTests
         using (factory)
         using (client)
         {
-            await ExerciseAsync(client);
+            await ExerciseAsync(factory, client);
         }
 
         Assert.True(collector.Received("/v2.1/track", "\"name\":\"mcpmysite.search\""), $"No search span. Received: {string.Join(", ", collector.Paths)}");
@@ -246,10 +246,39 @@ public class ServerExportTests
         Assert.True(collector.Received("/v2.1/track", "telemetry export AzureMonitor"), "No startup summary.");
     }
 
-    private static async Task ExerciseAsync(HttpClient client)
+    [Fact]
+    public async Task ShutdownFlushSendsWhatIsBuffered()
+    {
+        await using var collector = await FakeCollector.StartAsync();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = collector.Endpoint,
+            ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf",
+        });
+        builder.AddSiteTelemetry();
+        var app = builder.Build();
+        app.FlushTelemetryOnShutdown();
+
+        await app.StartAsync();
+        app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ShutdownTest").LogWarning("Written just before shutdown");
+        await app.StopAsync();
+        await app.DisposeAsync();
+
+        // Without the flush on stop, the record would still be batched when the container goes, and be lost.
+        Assert.True(collector.Received("/v1/logs", "Written just before shutdown"), $"Not exported. Received: {string.Join(", ", collector.Paths)}");
+    }
+
+    private static async Task ExerciseAsync(WebApplicationFactory<server::Program> factory, HttpClient client)
     {
         (await client.GetAsync("/api/search?q=rockets")).EnsureSuccessStatusCode();
         (await LoggedServer.McpAsync(client, LoggedServer.ToolCall("search", new { query = "widgets" }))).EnsureSuccessStatusCode();
+
+        // Flushed here rather than left to the shutdown flush: disposing a WebApplicationFactory tears the container
+        // down from the test thread while the server's own shutdown runs on another, which a real exit never does.
+        // ShutdownFlushSendsWhatIsBuffered covers the shutdown path on a host stopped the way the server stops.
+        TelemetrySetup.FlushTelemetry(factory.Services);
     }
 }
 

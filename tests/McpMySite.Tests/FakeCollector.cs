@@ -16,6 +16,7 @@ public sealed class FakeCollector : IAsyncDisposable
 {
     private readonly WebApplication _app;
     private readonly ConcurrentQueue<(string Path, byte[] Body)> _received = new();
+    private readonly string _instrumentationKey = Guid.NewGuid().ToString();
 
     private FakeCollector(WebApplication app)
     {
@@ -24,8 +25,11 @@ public sealed class FakeCollector : IAsyncDisposable
 
     public string Endpoint => _app.Urls.First();
 
-    /// <summary>An Application Insights connection string that sends to this collector.</summary>
-    public string AzureMonitorConnectionString => $"InstrumentationKey=00000000-0000-0000-0000-000000000001;IngestionEndpoint={Endpoint}/";
+    /// <summary>
+    /// An Application Insights connection string that sends to this collector. The key is unique per collector:
+    /// the exporter keeps unsent items in storage shared by key, which would let parallel tests receive each other's.
+    /// </summary>
+    public string AzureMonitorConnectionString => $"InstrumentationKey={_instrumentationKey};IngestionEndpoint={Endpoint}/";
 
     public static async Task<FakeCollector> StartAsync()
     {
