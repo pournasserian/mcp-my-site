@@ -202,3 +202,39 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         return envelope.GetProperty("result");
     }
 }
+
+public class UnconfiguredServerTests
+{
+    [Fact]
+    public async Task HealthExplainsMissingIndexSource()
+    {
+        using var factory = new WebApplicationFactory<server::Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Index:Path"] = "",
+                ["Index:Url"] = "",
+            }));
+        });
+        using var client = factory.CreateClient();
+
+        // The refresh service runs in the background, so the error can land just after the first request.
+        var health = default(JsonElement);
+        for (var i = 0; i < 100; i++)
+        {
+            var response = await client.GetAsync("/healthz");
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            health = await response.Content.ReadFromJsonAsync<JsonElement>();
+            if (health.GetProperty("lastError").ValueKind == JsonValueKind.String)
+            {
+                break;
+            }
+
+            await Task.Delay(50);
+        }
+
+        Assert.Equal("no-index", health.GetProperty("status").GetString());
+        Assert.Contains("Index:Path", health.GetProperty("lastError").GetString());
+    }
+}

@@ -12,7 +12,7 @@ mcpmysite init https://example.com          # writes appsettings.json for the in
 export OPENROUTER_API_KEY=sk-or-...         # embeddings key, never stored in files
 mcpmysite build                             # crawls, extracts, embeds, writes ./index
 mcpmysite search "how do I reset my password"
-Index__Path=./index dotnet run --project src/McpMySite.Server
+Index__Path="$PWD/index" dotnet run --project src/McpMySite.Server
 ```
 
 Then connect an MCP client to `http://localhost:5000/mcp`, or call
