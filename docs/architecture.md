@@ -335,6 +335,11 @@ flowchart TB
     Key --> SAPI["GET /api/search<br/>minimal API"]
     FH --> H["GET /healthz, GET /"]
     FH --> Docs["GET /openapi/v1.json<br/>GET /docs (Scalar)"]
+    FH --> Pages["GET /, /playground, robots.txt, sitemap.xml<br/>Razor components, server-rendered"]
+    FH --> Info["GET /api/info"]
+    Pages --> SI["SiteInfo<br/>site, index, stats, endpoint URLs"]
+    Info --> SI
+    SI --> Holder
 
     MCP --> Tools["SiteTools<br/>search, fetch"]
     Tools --> SS["SiteSearchService"]
@@ -356,6 +361,10 @@ flowchart TB
 | `SiteTools` | The two MCP tools. Thin: validate arguments, call the service, shape the result, turn "no index" into a tool error. |
 | `SearchEndpoints` | The HTTP search endpoint with its validation, status codes and OpenAPI metadata. |
 | `OpenApiSetup` | The OpenAPI document (titled after the loaded site, MCP excluded) and the Scalar reference page. |
+| `SiteInfo`, `InfoEndpoints` | One model of the site, the loaded index, its build stats and the endpoint URLs, served as `/api/info` and rendered by the landing page. |
+| `LlmsTxt` | Builds `/llms.txt` from every page of the loaded store, grouped by the manifest's sections, and caches it per index build and base URL. |
+| `PlaygroundPage` | The MCP playground: a server-rendered page whose inline script is a minimal Streamable HTTP client (initialize, tools/list, tools/call), with forms generated from input schemas. It writes server data with `textContent` only. |
+| `PageEndpoints`, `LandingPage`, `PageShell` | The landing page as a Razor component rendered on the server through `RazorComponentResult`, plus `robots.txt` and `sitemap.xml`. `PageShell` holds the document head (description, canonical, Open Graph, schema.org) and the inlined styles. |
 | `Program` | Wiring: options, CORS policies bound from options, rate limiter partitioned by IP, API key middleware, telemetry exporters, endpoints. |
 
 ### 5.2 Startup and hot swap
@@ -492,6 +501,8 @@ endpoint and metrics).
 | Chunks carry title and heading path | Bare text chunks | Headings disambiguate short sections and improve recall on section-level questions |
 | Per-IP fixed-window rate limit built in | Rely on a gateway | Works everywhere the container runs; a gateway (APIM) can still sit in front |
 | Fail closed on build, fail open on query | Fail open everywhere, or fail closed everywhere | A broken index is worse than a stale one; a degraded answer is better than no answer |
+| Landing page rendered on the server with Razor components | A static page that fetches `/api/info`; a JavaScript framework | Crawlers and link previews see the full content; Razor encodes crawled titles and descriptions; no front-end build; ships in the shared framework |
+| Build stats in the manifest | Server reads `report.json` | Works the same for `Index:Url` and `Index:Path`; the report stays an owner's diagnostic file |
 
 ## 9. Extension points
 

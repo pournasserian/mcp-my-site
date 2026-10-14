@@ -1,0 +1,79 @@
+@* A small MCP client in the browser: connect, list the tools, call them with generated forms, read every message. *@
+<PageShell Title="@PageTitle" Description="@PageDescription" Canonical="@(BaseUrl + PageEndpoints.PlaygroundPath)" Lang="@(Info.Site?.Language ?? "en")"
+           SiteName="@Info.Site?.Name" Indexable="@(Info.Index is not null)" Version="@Info.Server.Version" PageScript="@PageAssets.PlaygroundScript">
+    <header class="hero">
+        <p class="eyebrow">MCP playground</p>
+        <h1>@PageTitle</h1>
+        <p class="lead">Call the server's tools from your browser, without installing an MCP client. Requests go to the MCP endpoint exactly as an AI assistant would send them, and every message is shown below.</p>
+        <nav class="links" aria-label="Elsewhere">
+            <a href="/">Server home</a>
+            @if (Info.Endpoints.Docs is not null)
+            {
+                <a href="@Info.Endpoints.Docs">API reference</a>
+            }
+        </nav>
+    </header>
+
+    <main id="playground" data-endpoint="@EndpointPath" data-requires-key="@(Info.Endpoints.McpRequiresKey ? "true" : "false")">
+        <noscript>
+            <p class="notice">The playground needs JavaScript. The <a href="/">server home</a> shows how to connect an MCP client instead.</p>
+        </noscript>
+
+        <section aria-labelledby="connection-title">
+            <h2 id="connection-title">Connection</h2>
+            <p>Endpoint: <code>@Info.Endpoints.Mcp</code> (Streamable HTTP, stateless)</p>
+            @if (Info.Endpoints.McpRequiresKey)
+            {
+                <label class="field">
+                    <span class="field-name">API key</span>
+                    <input type="password" id="api-key" autocomplete="off" spellcheck="false" />
+                    <small>This server needs a key from its owner. It stays in this page and is sent as <code>Authorization: Bearer</code>.</small>
+                </label>
+            }
+            <p class="actions">
+                <button type="button" id="connect" class="primary">Connect</button>
+                <span id="status" role="status" aria-live="polite"></span>
+            </p>
+            <div id="server-info" hidden>
+                <dl class="facts" id="server-facts"></dl>
+                <details>
+                    <summary>Instructions the server gives to models</summary>
+                    <pre class="page" id="instructions"></pre>
+                </details>
+            </div>
+        </section>
+
+        <section id="tools-section" aria-labelledby="tools-title" hidden>
+            <h2 id="tools-title">Tools</h2>
+            <p>The forms are built from each tool's input schema, as returned by <code>tools/list</code>.</p>
+            <div id="tools"></div>
+        </section>
+
+        <section id="log-section" aria-labelledby="log-title" hidden>
+            <h2 id="log-title">Messages</h2>
+            <p class="actions">
+                <span>Every JSON-RPC request and response, newest first.</span>
+                <button type="button" id="clear-log" class="secondary">Clear</button>
+            </p>
+            <ol class="log" id="log"></ol>
+        </section>
+    </main>
+</PageShell>
+
+@code {
+    [Parameter, EditorRequired] public SiteInfo Info { get; set; } = null!;
+
+    [Parameter, EditorRequired] public string BaseUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Path of the MCP endpoint on this origin. The script calls it relative to the page so it stays same-origin
+    /// even when Ui:PublicUrl names a different host.
+    /// </summary>
+    [Parameter, EditorRequired] public string EndpointPath { get; set; } = string.Empty;
+
+    private string PageTitle => Info.Site is null ? "Try the MCP server" : $"Try the {Info.Site.Name} MCP server";
+
+    private string PageDescription => Info.Site is null
+        ? "Call this MCP server's tools from the browser."
+        : $"Search and read the pages of {Info.Site.Name} through its MCP server, right in the browser. No MCP client needed.";
+}

@@ -1,0 +1,262 @@
+@* The server's home page: what site it covers, how to connect, what is indexed. Rendered on the server so crawlers see all of it. *@
+<PageShell Title="@PageTitle" Description="@PageDescription" Canonical="@(BaseUrl + "/")" Lang="@(Site?.Language ?? "en")"
+           SiteName="@Site?.Name" JsonLd="@JsonLd" Indexable="@(Index is not null)" Version="@Info.Server.Version">
+    <header class="hero">
+        <p class="eyebrow">MCP server and search API</p>
+        <h1>@(Site?.Name ?? "No index loaded")</h1>
+        @if (Site is not null)
+        {
+            @if (!string.IsNullOrWhiteSpace(Site.Description))
+            {
+                <p class="lead">@Site.Description</p>
+            }
+            <p><a href="@Site.Url">@Site.Url</a></p>
+        }
+        <nav class="links" aria-label="On this page">
+            @if (Index is not null)
+            {
+                <a href="#connect">Connect</a>
+                <a href="#content">What is indexed</a>
+                <a href="#build">Last build</a>
+                <a href="@PageEndpoints.PlaygroundPath">Try it in the browser</a>
+            }
+            @if (Info.Endpoints.SearchApi is not null)
+            {
+                <a href="#api">Search API</a>
+            }
+            @if (Info.Endpoints.Docs is not null)
+            {
+                <a href="@Info.Endpoints.Docs">API reference</a>
+            }
+        </nav>
+    </header>
+
+    <main>
+        @if (Index is null || Site is null)
+        {
+            <section>
+                <h2>No index loaded yet</h2>
+                <p>The server is running but has not loaded an index. It keeps retrying on its poll interval; <a href="/healthz">/healthz</a> shows the last error.</p>
+            </section>
+        }
+        else
+        {
+            @if (Index.Stale)
+            {
+                <p class="notice" role="status">This index was built on @Date(Index.BuiltAt), @Ago(Index.BuiltAt). Answers may miss recent changes to the site.</p>
+            }
+
+            <section id="connect" aria-labelledby="connect-title">
+                <h2 id="connect-title">Connect an AI assistant</h2>
+                <p>This server lets AI assistants search and read the pages of @Site.Name. Add it to your client as a remote MCP server using Streamable HTTP:</p>
+                <div class="copyable">
+                    <code id="mcp-url">@Info.Endpoints.Mcp</code>
+                    <button type="button" class="copy" data-copy="mcp-url">Copy</button>
+                </div>
+                <p>To see what an assistant gets back, try the tools in the <a href="@PageEndpoints.PlaygroundPath">MCP playground</a>; no client needed.</p>
+                @if (Info.Endpoints.McpRequiresKey)
+                {
+                    <p class="notice">This server needs an API key from its owner, sent as <code>Authorization: Bearer &lt;key&gt;</code>. Clients that cannot send a header, such as Claude.ai and ChatGPT, cannot connect.</p>
+                }
+
+                <details open>
+                    <summary>Claude Code</summary>
+                    <pre><code id="snippet-claude-code">@ClaudeCodeSnippet</code></pre>
+                    <button type="button" class="copy" data-copy="snippet-claude-code">Copy</button>
+                </details>
+                @if (!Info.Endpoints.McpRequiresKey)
+                {
+                    <details>
+                        <summary>Claude.ai and Claude Desktop</summary>
+                        <p>Open Settings, then Connectors, add a custom connector and paste the URL above.</p>
+                    </details>
+                    <details>
+                        <summary>ChatGPT</summary>
+                        <p>Open Settings, then Apps &amp; Connectors, and create a connector with the URL above and no authentication (custom connectors may need developer mode). The <code>search</code> and <code>fetch</code> tools follow the shape ChatGPT expects for connectors and deep research.</p>
+                    </details>
+                }
+                <details>
+                    <summary>Visual Studio Code</summary>
+                    <p>In <code>.vscode/mcp.json</code>:</p>
+                    <pre><code id="snippet-vscode">@VsCodeSnippet</code></pre>
+                    <button type="button" class="copy" data-copy="snippet-vscode">Copy</button>
+                </details>
+                <details>
+                    <summary>Cursor</summary>
+                    <p>In <code>~/.cursor/mcp.json</code> or the project's <code>.cursor/mcp.json</code>:</p>
+                    <pre><code id="snippet-cursor">@CursorSnippet</code></pre>
+                    <button type="button" class="copy" data-copy="snippet-cursor">Copy</button>
+                </details>
+                <details>
+                    <summary>Other clients</summary>
+                    <p>Any client that speaks Streamable HTTP can use the URL directly. A client limited to stdio can bridge with <code>npx mcp-remote @Info.Endpoints.Mcp</code>.</p>
+                </details>
+
+                <h3>Tools</h3>
+                <p><code>search</code> finds the best matching pages for a question or keywords, with a snippet each. <code>fetch</code> returns a whole page as Markdown. Both are read-only.</p>
+                <p>Every indexed page is also listed for language models in <a href="/llms.txt">llms.txt</a>.</p>
+            </section>
+
+            <section id="content" aria-labelledby="content-title">
+                <h2 id="content-title">What is indexed</h2>
+                <dl class="tiles">
+                    <div><dt>Pages</dt><dd>@Number(Index.PageCount)</dd></div>
+                    @if (Stats is not null)
+                    {
+                        <div><dt>Words</dt><dd>@Number(Stats.Words)<small>approximate</small></dd></div>
+                        <div><dt>Sections</dt><dd>@Number(Stats.Sections.Count)</dd></div>
+                    }
+                    <div><dt>Last built</dt><dd>@Date(Index.BuiltAt)<small>@Ago(Index.BuiltAt)</small></dd></div>
+                    @if (Stats?.NewestPageModified is { } newest)
+                    {
+                        <div><dt>Newest page</dt><dd>@Date(newest)<small>last modified</small></dd></div>
+                    }
+                    @if (Stats is not null && Stats.Languages.Count > 0)
+                    {
+                        <div><dt>Languages</dt><dd>@string.Join(", ", Stats.Languages.Keys)</dd></div>
+                    }
+                </dl>
+
+                @if (Stats is not null && Stats.Sections.Count > 0)
+                {
+                    <h3>Sections</h3>
+                    <table>
+                        <thead><tr><th scope="col">Section</th><th scope="col">Path</th><th scope="col" class="num">Pages</th></tr></thead>
+                        <tbody>
+                            @foreach (var section in Stats.Sections)
+                            {
+                                <tr>
+                                    <td>@(section.Path == "/" ? "Home page" : section.Title ?? section.Path)</td>
+                                    <td><a href="@SectionUrl(section.Path)">@section.Path</a></td>
+                                    <td class="num">@Number(section.Pages)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            <section id="build" aria-labelledby="build-title">
+                <h2 id="build-title">Last build</h2>
+                <dl class="facts">
+                    <dt>Built</dt><dd><time datetime="@Index.BuiltAt.ToString("o", CultureInfo.InvariantCulture)">@DateTime(Index.BuiltAt)</time></dd>
+                    @if (Index.LoadedAt is { } loaded)
+                    {
+                        <dt>Loaded by this server</dt><dd><time datetime="@loaded.ToString("o", CultureInfo.InvariantCulture)">@DateTime(loaded)</time></dd>
+                    }
+                    @if (Stats is not null)
+                    {
+                        <dt>Source</dt><dd>@(Stats.Source == "folder" ? "Folder of built HTML" : "Crawl of the live site")</dd>
+                        <dt>Duration</dt><dd>@Stats.DurationSeconds.ToString("0.#", CultureInfo.InvariantCulture) s</dd>
+                        <dt>Pages fetched</dt><dd>@Number(Stats.PagesFetched)</dd>
+                        <dt>Pages skipped</dt><dd>@Number(Stats.PagesSkippedNoIndex) noindex, @Number(Stats.PagesSkippedDuplicate) duplicate, @Number(Stats.PagesSkippedEmpty) empty</dd>
+                        <dt>Errors</dt><dd>@Number(Stats.Errors)</dd>
+                        <dt>Embeddings</dt><dd>@Number(Stats.EmbeddingsGenerated) generated, @Number(Stats.EmbeddingsFromCache) from cache</dd>
+                    }
+                    <dt>Chunks</dt><dd>@Number(Index.ChunkCount)</dd>
+                    <dt>Embedding model</dt><dd>@Index.EmbeddingModel, @Index.EmbeddingDimensions dimensions</dd>
+                    <dt>Store</dt><dd>@Index.Store, format @Index.FormatVersion@(Index.IndexerVersion is null ? string.Empty : $", indexer {Index.IndexerVersion}")</dd>
+                </dl>
+            </section>
+        }
+
+        @if (Info.Endpoints.SearchApi is not null)
+        {
+            <section id="api" aria-labelledby="api-title">
+                <h2 id="api-title">Search API</h2>
+                <p>The same search answers plain HTTP, for a site's own search box or any script:</p>
+                <pre><code id="snippet-api">curl "@(Info.Endpoints.SearchApi)?q=getting+started&amp;limit=5"</code></pre>
+                <button type="button" class="copy" data-copy="snippet-api">Copy</button>
+                <p>
+                    It is described by an <a href="@Info.Endpoints.OpenApi">OpenAPI document</a>@if (Info.Endpoints.Docs is not null)
+                    {<text> with an <a href="@Info.Endpoints.Docs">interactive reference</a></text>}. Server and index details are at <a href="@InfoUrl">@InfoUrl</a>.
+                </p>
+            </section>
+        }
+    </main>
+</PageShell>
+
+@code {
+    [Parameter, EditorRequired] public SiteInfo Info { get; set; } = null!;
+
+    [Parameter, EditorRequired] public string BaseUrl { get; set; } = string.Empty;
+
+    [Parameter] public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow;
+
+    private SiteSummary? Site => Info.Site;
+
+    private IndexSummary? Index => Info.Index;
+
+    private IndexStats? Stats => Info.Index?.Stats;
+
+    private string InfoUrl => BaseUrl + InfoEndpoints.Path;
+
+    private string PageTitle => Site is null ? "MCP server" : $"{Site.Name} MCP server and search API";
+
+    private string PageDescription => Site is null || Index is null
+        ? "An MCP server and search API for a website. No index is loaded yet."
+        : $"Connect Claude, ChatGPT and other AI assistants to {Site.Name}. {Index.PageCount} pages indexed, searchable through MCP and a JSON API.";
+
+    /// <summary>Client config key: the site's host as a short slug, such as example-com.</summary>
+    private string ServerKey
+    {
+        get
+        {
+            var host = Site is null ? "site" : new Uri(Site.Url).Host.ToLowerInvariant();
+            host = host.StartsWith("www.", StringComparison.Ordinal) ? host[4..] : host;
+            return string.Join('-', host.Split(['.', ':'], StringSplitOptions.RemoveEmptyEntries));
+        }
+    }
+
+    private string ClaudeCodeSnippet => Info.Endpoints.McpRequiresKey
+        ? $"claude mcp add --transport http {ServerKey} {Info.Endpoints.Mcp} --header \"Authorization: Bearer <key>\""
+        : $"claude mcp add --transport http {ServerKey} {Info.Endpoints.Mcp}";
+
+    private string VsCodeSnippet => Json(new Dictionary<string, object>
+    {
+        ["servers"] = new Dictionary<string, object> { [ServerKey] = Info.Endpoints.McpRequiresKey
+            ? new { type = "http", url = Info.Endpoints.Mcp, headers = new Dictionary<string, string> { ["Authorization"] = "Bearer <key>" } }
+            : new { type = "http", url = Info.Endpoints.Mcp } },
+    });
+
+    private string CursorSnippet => Json(new Dictionary<string, object>
+    {
+        ["mcpServers"] = new Dictionary<string, object> { [ServerKey] = Info.Endpoints.McpRequiresKey
+            ? new { url = Info.Endpoints.Mcp, headers = new Dictionary<string, string> { ["Authorization"] = "Bearer <key>" } }
+            : new { url = Info.Endpoints.Mcp } },
+    });
+
+    private string? JsonLd => Site is null ? null : System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+    {
+        ["@context"] = "https://schema.org",
+        ["@type"] = "WebAPI",
+        ["name"] = PageTitle,
+        ["description"] = PageDescription,
+        ["url"] = BaseUrl + "/",
+        ["documentation"] = Info.Endpoints.Docs ?? Info.Endpoints.OpenApi,
+        ["about"] = new Dictionary<string, object?> { ["@type"] = "WebSite", ["name"] = Site.Name, ["url"] = Site.Url, ["description"] = Site.Description },
+        ["dateModified"] = Index?.BuiltAt.ToString("o", CultureInfo.InvariantCulture),
+    });
+
+    private string SectionUrl(string path) => Site is null ? path : new Uri(new Uri(Site.Url), path).ToString();
+
+    private static string Json(object value) =>
+        System.Text.Json.JsonSerializer.Serialize(value, new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+
+    private static string Number(long value) => value.ToString("N0", CultureInfo.InvariantCulture);
+
+    private static string Date(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static string DateTime(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
+
+    private string Ago(DateTimeOffset value)
+    {
+        var elapsed = Now - value;
+        return elapsed.TotalMinutes < 1 ? "just now"
+            : elapsed.TotalHours < 1 ? Plural((int)elapsed.TotalMinutes, "minute")
+            : elapsed.TotalDays < 1 ? Plural((int)elapsed.TotalHours, "hour")
+            : Plural((int)elapsed.TotalDays, "day");
+
+        static string Plural(int count, string unit) => $"{count} {unit}{(count == 1 ? string.Empty : "s")} ago";
+    }
+}

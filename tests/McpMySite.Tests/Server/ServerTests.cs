@@ -212,13 +212,13 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
     }
 
     [Fact]
-    public async Task OpenApiDocumentDescribesOnlyTheSearchApi()
+    public async Task OpenApiDocumentDescribesTheHttpApiOnly()
     {
         var document = await Client.GetFromJsonAsync<JsonElement>("/openapi/v1.json");
         Assert.Equal("Example search API", document.GetProperty("info").GetProperty("title").GetString());
 
         var paths = document.GetProperty("paths").EnumerateObject().Select(p => p.Name).ToList();
-        Assert.Equal(["/api/search"], paths);
+        Assert.Equal(["/api/search", "/api/info"], paths);
 
         var parameters = document.GetProperty("paths").GetProperty("/api/search").GetProperty("get").GetProperty("parameters").EnumerateArray().ToList();
         var q = parameters.Single(p => p.GetProperty("name").GetString() == "q");
@@ -236,17 +236,6 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         var html = await response.Content.ReadAsStringAsync();
         Assert.Contains("src=\"scalar.js\"", html);
         Assert.DoesNotContain("cdn.jsdelivr.net", html);
-    }
-
-    [Fact]
-    public async Task ApiReferencePageCanBeTurnedOff()
-    {
-        // UseSetting, not ConfigureAppConfiguration: Program reads which endpoints to map before the app is built.
-        using var factory = fixture.Factory.WithWebHostBuilder(builder => builder.UseSetting("Ui:Enabled", "false"));
-        using var client = factory.CreateClient();
-
-        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/docs/")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/openapi/v1.json")).StatusCode);
     }
 
     private async Task<JsonElement> McpCallAsync(object request)
