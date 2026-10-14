@@ -150,7 +150,7 @@ mcpmysite build
 # 4. Try a few queries without starting anything
 mcpmysite search "how do I reset my password"
 
-# 5. Serve it
+# 5. Serve it (absolute path: dotnet run starts the server in its project folder)
 Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
 ```
 
@@ -546,6 +546,10 @@ Index__Path=/srv/index ASPNETCORE_URLS=http://0.0.0.0:8080 dotnet McpMySite.Serv
 # Container
 docker run -p 8080:8080 -e Index__Url=https://example.com/index/ -e OPENROUTER_API_KEY=... mcp-my-site
 ```
+
+`dotnet run` starts the server in `src/McpMySite.Server` and listens on `http://localhost:5000`, as set
+in `Properties/launchSettings.json`. A relative `Index:Path` resolves from the server's working folder,
+not from where you typed the command, so pass an absolute path.
 
 The server starts even when the index cannot be loaded; it answers `503` on `/healthz`, returns tool
 errors on MCP calls and `503` on the search API, and keeps retrying on the poll interval. Once an
@@ -1140,9 +1144,11 @@ cache folder persists between CI runs (section 10.3). Crawling: raise `Crawl:Con
 ### Server
 
 **`/healthz` returns 503 with `"status": "no-index"`.**
-Read `lastError`. Typical causes: `Index:Path`/`Index:Url` not set or wrong; the URL is not reachable
-from the server; the manifest fails validation (unsupported format version, zero pages); data files
-disagree with the manifest (partial upload: publish the whole folder, manifest last).
+Read `lastError`. Typical causes: `Index:Path`/`Index:Url` not set or wrong (a relative `Index:Path`
+under `dotnet run` resolves from `src/McpMySite.Server`; `lastError` shows the full path it tried);
+the URL is not reachable from the server; the manifest fails validation (unsupported format version,
+zero pages); data files disagree with the manifest (partial upload: publish the whole folder,
+manifest last).
 
 **A new index was published but `builtAt` has not changed.**
 Wait for `Index:PollIntervalSeconds`. If `lastError` is set, the new index failed validation and the

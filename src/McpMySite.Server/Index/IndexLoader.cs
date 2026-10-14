@@ -138,13 +138,17 @@ public sealed class IndexLoader(
 }
 
 /// <summary>Loads the index at startup and keeps polling for a new one.</summary>
-public sealed class IndexRefreshService(IndexLoader loader, IOptions<IndexOptions> options, ILogger<IndexRefreshService> logger) : BackgroundService
+public sealed class IndexRefreshService(IndexLoader loader, IndexHolder holder, IOptions<IndexOptions> options, ILogger<IndexRefreshService> logger) : BackgroundService
 {
+    private const string NotConfiguredError = "No index source configured. Set Index:Path or Index:Url.";
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!loader.IsConfigured)
         {
-            logger.LogError("No index source configured. Set Index:Path or Index:Url.");
+            // Recorded as well as logged so /healthz explains its 503 instead of showing lastError: null.
+            holder.RecordError(NotConfiguredError);
+            logger.LogError(NotConfiguredError);
             return;
         }
 
