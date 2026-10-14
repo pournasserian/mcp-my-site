@@ -1047,6 +1047,51 @@ URL does not expose anything new.
 
 ### 10.2 Azure App Service (reference deployment)
 
+#### With the Bicep template
+
+`deploy/azure/main.bicep` creates the whole setup in one resource group: an App Service plan and a
+Linux web app running the server container, an Azure Container Registry it pulls from with its
+managed identity, a storage account with a public-read `index` container, a Key Vault holding the
+keys, and Application Insights with a Log Analytics workspace. Names follow the Cloud Adoption
+Framework pattern, for example `app-mcpmysite-prod-cac-x7k2` and `stmcpmysiteprodcacx7k2`; the
+4-character suffix keeps globally unique names from colliding.
+
+You need the Azure CLI, signed in with Owner (or Contributor plus User Access Administrator) on the
+resource group, because the template assigns roles. Run from the repository root, with a built index
+in `./index`:
+
+```powershell
+$env:AI_API_KEY = "sk-..."
+# $env:MCP_API_KEY = "..."   # optional: require a key on the MCP endpoint
+
+az group create --name rg-mcpmysite-prod-cac --location canadacentral
+az deployment group create --resource-group rg-mcpmysite-prod-cac --template-file deploy/azure/main.bicep --parameters deploy/azure/main.bicepparam --query properties.outputs
+
+# Build the server image in the registry, upload the index, then restart to pull the image
+az acr build --registry <containerRegistryName> --image mcp-my-site:latest --file src/McpMySite.Server/Dockerfile .
+az storage blob upload-batch --account-name <storageAccountName> --destination index --source index --overwrite --auth-mode login
+az webapp restart --resource-group rg-mcpmysite-prod-cac --name <webAppName>
+```
+
+The names in angle brackets are in the deployment outputs. `/healthz` on `webAppUrl` should then
+report the loaded index, and `mcpEndpoint` is the URL for MCP clients.
+
+- **Parameters.** `main.bicepparam` sets the workload and environment names and reads the keys from
+  the environment, so no secret is ever written to a file. Set `siteOrigin` there to allow the site's
+  search box; see `main.bicep` for the rest (SKU, region code, embeddings endpoint, tags).
+- **Updating the index.** Re-run `upload-batch`. The server polls the manifest and swaps the new
+  index in without a restart.
+- **Updating the server.** Re-run `az acr build` and `az webapp restart`.
+- **App settings are owned by the template.** A redeploy replaces settings changed in the portal, so
+  change them in the template or its parameters.
+- **Role propagation.** Role assignments can take a few minutes to apply. If the first upload is
+  refused or the app cannot read Key Vault, wait and retry.
+- **Starting over.** Deleting the resource group soft-deletes the key vault for 7 days. To redeploy
+  into a group with the same name within that time, purge it first with
+  `az keyvault purge --name <keyVaultName>`.
+
+#### With the Azure CLI only
+
 Push the image to a registry you control (Azure Container Registry or GitHub Container Registry),
 then:
 
@@ -1073,7 +1118,6 @@ Notes:
 - Add `Mcp__ApiKey` the same way if you want the MCP endpoint keyed.
 - Azure API Management in front is optional. It adds OAuth, quotas and analytics; the built-in rate
   limit and API key cover the small profile.
-- A Bicep template for this setup is planned; until then the commands above are the reference.
 
 ### 10.3 Building the index in CI
 
