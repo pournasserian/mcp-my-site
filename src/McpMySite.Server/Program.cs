@@ -21,6 +21,8 @@ services.AddSingleton<IndexLoader>();
 services.AddHostedService<IndexRefreshService>();
 services.AddSingleton<SiteSearchService>();
 services.AddSiteOpenApi();
+services.AddRazorComponents();
+services.AddSingleton<LlmsTxt>();
 
 // Numbers are plain JSON numbers; the web default also accepts strings, which would make every OpenAPI number "integer or string".
 services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
@@ -44,7 +46,9 @@ services.AddMcpServer(options =>
             return Task.CompletedTask;
         };
     })
-    .WithTools<SiteTools>();
+    .WithTools<SiteTools>()
+    .WithRequestFilters(filters => filters.AddListToolsFilter(next => async (context, cancellationToken) =>
+        SiteTools.DescribeSite(await next(context, cancellationToken), context.Services?.GetService<IndexHolder>()?.Current?.Manifest)));
 
 // CORS policies always exist; an empty origin list simply allows no browser origin.
 services.AddCors();
@@ -154,6 +158,8 @@ if (searchApiOptions.Enabled)
 }
 
 app.MapSiteOpenApi(uiOptions);
+app.MapInfoApi();
+app.MapPages(uiOptions);
 
 app.MapGet("/healthz", (IndexHolder holder) =>
 {
@@ -170,12 +176,16 @@ app.MapGet("/healthz", (IndexHolder holder) =>
     return manifest is null ? Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable) : Results.Ok(body);
 }).ExcludeFromDescription();
 
-app.MapGet("/", (IndexHolder holder) =>
+// With the pages on, / is the landing page; without them it stays a short text summary.
+if (!uiOptions.Enabled)
 {
-    var manifest = holder.Current?.Manifest;
-    var name = manifest?.SiteName ?? manifest?.SiteUrl ?? "no index loaded";
-    return Results.Text($"mcp-my-site for {name}\nMCP endpoint: {mcpOptions.Path}\nSearch API: {(searchApiOptions.Enabled ? searchApiOptions.Path + "?q=..." : "disabled")}\n");
-}).ExcludeFromDescription();
+    app.MapGet("/", (IndexHolder holder) =>
+    {
+        var manifest = holder.Current?.Manifest;
+        var name = manifest?.SiteName ?? manifest?.SiteUrl ?? "no index loaded";
+        return Results.Text($"mcp-my-site for {name}\nMCP endpoint: {mcpOptions.Path}\nSearch API: {(searchApiOptions.Enabled ? searchApiOptions.Path + "?q=..." : "disabled")}\n");
+    }).ExcludeFromDescription();
+}
 
 app.Run();
 

@@ -7,6 +7,7 @@ global using McpMySite.Server.Api;
 global using McpMySite.Server.Index;
 global using McpMySite.Server.Mcp;
 global using McpMySite.Server.Options;
+global using McpMySite.Server.Pages;
 global using McpMySite.Server.Search;
 global using Microsoft.AspNetCore.Cors.Infrastructure;
 global using Microsoft.AspNetCore.HttpOverrides;

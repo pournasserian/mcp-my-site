@@ -18,7 +18,7 @@ public static class OpenApiSetup
             {
                 Title = $"{siteName} search API",
                 Version = "v1",
-                Description = $"Hybrid keyword and semantic search over the pages of {siteName}. "
+                Description = $"Hybrid keyword and semantic search over the pages of {siteName}, and details of the index behind it. "
                     + "The same index is served to AI agents through the MCP endpoint, which is not part of this document.",
             };
             return Task.CompletedTask;
