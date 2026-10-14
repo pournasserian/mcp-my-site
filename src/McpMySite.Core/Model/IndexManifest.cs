@@ -15,6 +15,9 @@ public sealed record IndexManifest
 
     public string? SiteName { get; init; }
 
+    /// <summary>What the site is about, from configuration or the home page's meta description.</summary>
+    public string? SiteDescription { get; init; }
+
     public required string EmbeddingModel { get; init; }
 
     public required int EmbeddingDimensions { get; init; }
@@ -29,6 +32,9 @@ public sealed record IndexManifest
     public string? Instructions { get; init; }
 
     public string? IndexerVersion { get; init; }
+
+    /// <summary>Numbers from the indexer run, for status pages. Absent in indexes from older indexers.</summary>
+    public IndexStats? Stats { get; init; }
 
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {

@@ -61,6 +61,9 @@ public sealed class SiteConfig
 
     /// <summary>Display name; falls back to og:site_name of the home page, then to the host.</summary>
     public string? Name { get; set; }
+
+    /// <summary>One or two sentences on what the site is about; falls back to the home page's meta description.</summary>
+    public string? Description { get; set; }
 }
 
 public enum SourceType
