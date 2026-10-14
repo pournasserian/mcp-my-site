@@ -8,9 +8,13 @@ built for sites under 1,000 pages. .NET 10, MIT licence.
 ## Quick start
 
 You need [Git](https://git-scm.com), the [.NET 10 SDK](https://dotnet.microsoft.com/download) (or
-only [Docker](https://www.docker.com/products/docker-desktop/), see below) and an
-[OpenRouter](https://openrouter.ai) API key for embeddings. The key is read from the
-`OPENROUTER_API_KEY` environment variable and never stored in files.
+only [Docker](https://www.docker.com/products/docker-desktop/), see below) and an API key for any
+OpenAI-compatible embeddings endpoint. That can be an AI gateway such as
+[OpenRouter](https://openrouter.ai) (the default), [Vercel AI Gateway](https://vercel.com/ai-gateway)
+or a self-hosted [LiteLLM](https://docs.litellm.ai) proxy, or a provider directly: OpenAI, Azure
+OpenAI, Google Gemini, or [Ollama](https://ollama.com) running locally. See
+[Other providers](docs/user-guide.md#53-other-providers) to switch away from OpenRouter. The key is
+read from the `AI_API_KEY` environment variable and never stored in files.
 
 In every variant, `init` writes `appsettings.json`, `build` crawls the site and writes `./index`, and
 `search` checks the index before you serve it. The server then needs an absolute `Index__Path`,
@@ -24,7 +28,7 @@ Install the SDK with `brew install --cask dotnet-sdk` on macOS, or your distribu
 ```bash
 git clone https://github.com/pournasserian/mcp-my-site.git
 cd mcp-my-site
-export OPENROUTER_API_KEY=sk-or-...
+export AI_API_KEY=sk-...
 dotnet run --project src/McpMySite.Indexer -- init https://example.com
 dotnet run --project src/McpMySite.Indexer -- build
 dotnet run --project src/McpMySite.Indexer -- search "how do I reset my password"
@@ -38,7 +42,7 @@ Install the SDK with `winget install Microsoft.DotNet.SDK.10`, then open a new t
 ```powershell
 git clone https://github.com/pournasserian/mcp-my-site.git
 cd mcp-my-site
-$env:OPENROUTER_API_KEY = "sk-or-..."
+$env:AI_API_KEY = "sk-..."
 dotnet run --project src/McpMySite.Indexer -- init https://example.com
 dotnet run --project src/McpMySite.Indexer -- build
 dotnet run --project src/McpMySite.Indexer -- search "how do I reset my password"
@@ -53,7 +57,7 @@ Same SDK install as PowerShell. In `cmd`, do not put quotes around the value of 
 ```bat
 git clone https://github.com/pournasserian/mcp-my-site.git
 cd mcp-my-site
-set OPENROUTER_API_KEY=sk-or-...
+set AI_API_KEY=sk-...
 dotnet run --project src/McpMySite.Indexer -- init https://example.com
 dotnet run --project src/McpMySite.Indexer -- build
 dotnet run --project src/McpMySite.Indexer -- search "how do I reset my password"
@@ -62,19 +66,19 @@ dotnet run --project src/McpMySite.Server
 ```
 
 The variables last for the current window only. To keep the key for new terminals, run
-`setx OPENROUTER_API_KEY sk-or-...` (cmd) or
-`[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "sk-or-...", "User")` (PowerShell).
+`setx AI_API_KEY sk-...` (cmd) or
+`[Environment]::SetEnvironmentVariable("AI_API_KEY", "sk-...", "User")` (PowerShell).
 
 ### Docker
 
 The server ships as a container image; the indexer runs in the .NET SDK image, so the host needs only
-Git and Docker. Set `OPENROUTER_API_KEY` in your shell as above (`-e OPENROUTER_API_KEY` passes it
+Git and Docker. Set `AI_API_KEY` in your shell as above (`-e AI_API_KEY` passes it
 through), then from the repository root:
 
 ```bash
-docker run --rm -v "${PWD}:/src" -w /src -e OPENROUTER_API_KEY mcr.microsoft.com/dotnet/sdk:10.0 sh -c "dotnet run --project src/McpMySite.Indexer -- init https://example.com && dotnet run --project src/McpMySite.Indexer -- build"
+docker run --rm -v "${PWD}:/src" -w /src -e AI_API_KEY mcr.microsoft.com/dotnet/sdk:10.0 sh -c "dotnet run --project src/McpMySite.Indexer -- init https://example.com && dotnet run --project src/McpMySite.Indexer -- build"
 docker build -f src/McpMySite.Server/Dockerfile -t mcp-my-site .
-docker run --rm -p 8080:8080 -v "${PWD}/index:/index:ro" -e Index__Path=/index -e OPENROUTER_API_KEY mcp-my-site
+docker run --rm -p 8080:8080 -v "${PWD}/index:/index:ro" -e Index__Path=/index -e AI_API_KEY mcp-my-site
 ```
 
 These lines work as written in bash, zsh and PowerShell; in `cmd`, write `%CD%` instead of `${PWD}`.
