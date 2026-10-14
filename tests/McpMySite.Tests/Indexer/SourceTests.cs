@@ -138,16 +138,117 @@ public class CrawlSourceTests
 
 public class SiteOutlineTests
 {
-    [Fact]
-    public void GroupsPagesBySectionAndMentionsTools()
-    {
-        var outline = SiteOutline.Build("Example", "https://example.test/", TestIndex.Pages, new DateTimeOffset(2026, 10, 10, 0, 0, 0, TimeSpan.Zero), "Be concise.");
+    private static readonly DateTimeOffset BuiltAt = new(2026, 10, 10, 0, 0, 0, TimeSpan.Zero);
 
-        Assert.StartsWith("Be concise.", outline);
-        Assert.Contains("3 pages", outline);
+    [Fact]
+    public void DescribesSiteToolsAndSections()
+    {
+        var outline = SiteOutline.Build("Example", "https://example.test/", "Acme makes\n rockets.", TestIndex.Pages, BuiltAt, "Be concise.");
+
+        Assert.StartsWith("Be concise.\n\nExample (https://example.test/): Acme makes rockets.\n", outline);
+        Assert.Contains("3 pages, a snapshot taken on 2026-10-10", outline);
         Assert.Contains("`search`", outline);
+        Assert.Contains("`fetch`", outline);
+        Assert.Contains("Cite the URL", outline);
         Assert.Contains("- /docs (2 pages): Rockets; Widgets", outline);
+        Assert.DoesNotContain("- / ", outline);
         Assert.Contains("Content language: en, fr.", outline);
         Assert.DoesNotContain("\r", outline);
+    }
+
+    [Fact]
+    public void WithoutDescriptionStartsWithNameAndUrl()
+    {
+        var outline = SiteOutline.Build("Example", "https://example.test/", null, TestIndex.Pages, BuiltAt, null);
+        Assert.StartsWith("Example (https://example.test/).\n\n", outline);
+    }
+
+    [Fact]
+    public void LabelsSectionsWithTheirLandingPage()
+    {
+        PageDocument[] pages =
+        [
+            .. TestIndex.Pages,
+            new() { Id = 4, Url = "https://example.test/docs/", Title = "Documentation", Markdown = "All the docs." },
+            new() { Id = 5, Url = "https://example.test/about", Title = "About us", Markdown = "Who we are." },
+        ];
+
+        var outline = SiteOutline.Build("Example", "https://example.test/", null, pages, BuiltAt, null);
+
+        Assert.Contains("- Documentation (/docs, 3 pages): Rockets; Widgets\n", outline);
+        Assert.EndsWith("- About us (/about, 1 page)", outline);
+    }
+
+    [Fact]
+    public void StaysWithinTheLengthBudgetByTrimmingTheOutline()
+    {
+        // 30 sections of 5 pages with long titles: far more outline than fits.
+        var pages = Enumerable.Range(0, 30).SelectMany(s => Enumerable.Range(0, 5).Select(p => new PageDocument
+        {
+            Id = s * 5 + p + 1,
+            Url = $"https://example.test/section-{s:00}/page-{p}",
+            Title = $"Page {p} of section {s} with a title long enough to crowd the outline quickly",
+            Language = "en",
+            Markdown = "Text.",
+        })).ToList();
+
+        var outline = SiteOutline.Build("Example", "https://example.test/", new string('d', 500), pages, BuiltAt, null);
+
+        Assert.True(outline.Length <= SiteOutline.MaxChars, $"{outline.Length} characters");
+        Assert.Contains(new string('d', 300) + "…", outline);
+        Assert.Contains("Cite the URL", outline);
+        Assert.Contains("- /section-00 (5 pages): Page 0 of section 0", outline);
+        Assert.Matches(@"- and \d+ more sections$", outline);
+    }
+
+    [Fact]
+    public void ListsNewestPagesFirstWhateverTheCrawlOrder()
+    {
+        var outline = SiteOutline.Build("Example", "https://example.test/", null, TestIndex.Pages, BuiltAt, null);
+        var reversed = SiteOutline.Build("Example", "https://example.test/", null, TestIndex.Pages.Reverse().ToList(), BuiltAt, null);
+
+        // Rockets has a modified date and Widgets has none.
+        Assert.Contains("- /docs (2 pages): Rockets; Widgets", outline);
+        Assert.Equal(outline, reversed);
+    }
+}
+
+public class IndexStatsTests
+{
+    [Fact]
+    public void SummarisesRunAndPages()
+    {
+        var report = new BuildReport { PagesFetched = 5, PagesSkippedNoIndex = 1, PagesSkippedEmpty = 1, EmbeddingsGenerated = 3, EmbeddingsFromCache = 1 };
+        report.Errors.Add("https://example.test/broken: 500");
+
+        var stats = IndexBuilder.BuildStats(report, SourceType.Crawl, TestIndex.Pages, TimeSpan.FromSeconds(12.34));
+
+        Assert.Equal("crawl", stats.Source);
+        Assert.Equal(12.3, stats.DurationSeconds);
+        Assert.Equal(5, stats.PagesFetched);
+        Assert.Equal(1, stats.Errors);
+        Assert.Equal(new DateTimeOffset(2026, 1, 2, 0, 0, 0, TimeSpan.Zero), stats.NewestPageModified);
+        Assert.Equal(new Dictionary<string, int> { ["en"] = 2, ["fr"] = 1 }, stats.Languages);
+        Assert.Equal([new SectionStats("/docs", null, 2), new SectionStats("/", "Home", 1)], stats.Sections);
+        Assert.True(stats.Words > 20);
+    }
+
+    [Fact]
+    public void ManifestRoundTripsStatsAndStillReadsOlderManifests()
+    {
+        var manifest = TestIndex.Manifest(IndexFormat.JsonStoreType) with
+        {
+            SiteDescription = "Rockets and widgets.",
+            Stats = new IndexStats { PagesFetched = 3, Sections = [new SectionStats("/docs", "Docs", 2)] },
+        };
+
+        var parsed = IndexManifest.Parse(manifest.ToJson());
+        Assert.Equal("Rockets and widgets.", parsed.SiteDescription);
+        Assert.Equal(3, parsed.Stats!.PagesFetched);
+        Assert.Equal("Docs", parsed.Stats.Sections[0].Title);
+
+        var older = IndexManifest.Parse(TestIndex.Manifest(IndexFormat.JsonStoreType).ToJson());
+        Assert.Null(older.Stats);
+        Assert.Null(older.SiteDescription);
     }
 }

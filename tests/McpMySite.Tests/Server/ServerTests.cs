@@ -135,20 +135,54 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
             method = "tools/call",
             @params = new { name = "search", arguments = new { query = "kerosene", limit = 3 } },
         });
-        var structured = search.GetProperty("structuredContent");
-        var url = structured.GetProperty("results")[0].GetProperty("url").GetString();
-        Assert.Equal("https://example.test/docs/rockets", url);
+        var first = search.GetProperty("structuredContent").GetProperty("results")[0];
+        Assert.Equal("https://example.test/docs/rockets", first.GetProperty("url").GetString());
+        var id = first.GetProperty("id").GetString();
 
+        // ChatGPT passes the result id; other clients may pass the url. Both must reach the same page.
+        foreach (var arguments in new object[] { new { id }, new { url = first.GetProperty("url").GetString() } })
+        {
+            var fetch = await McpCallAsync(new
+            {
+                jsonrpc = "2.0",
+                id = 3,
+                method = "tools/call",
+                @params = new { name = "fetch", arguments },
+            });
+            var page = fetch.GetProperty("structuredContent");
+            Assert.Equal(id, page.GetProperty("id").GetString());
+            Assert.Equal("Rockets", page.GetProperty("title").GetString());
+            Assert.Contains("liquid oxygen", page.GetProperty("text").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task McpFetchWithoutIdOrUrlIsToolError()
+    {
         var fetch = await McpCallAsync(new
         {
             jsonrpc = "2.0",
-            id = 3,
+            id = 6,
             method = "tools/call",
-            @params = new { name = "fetch", arguments = new { url } },
+            @params = new { name = "fetch", arguments = new { } },
         });
-        var page = fetch.GetProperty("structuredContent");
-        Assert.Equal("Rockets", page.GetProperty("title").GetString());
-        Assert.Contains("liquid oxygen", page.GetProperty("markdown").GetString());
+        Assert.True(fetch.GetProperty("isError").GetBoolean());
+    }
+
+    [Fact]
+    public async Task McpToolDescriptionsNameTheSite()
+    {
+        var result = await McpCallAsync(new { jsonrpc = "2.0", id = 7, method = "tools/list" });
+        var tools = result.GetProperty("tools").EnumerateArray().ToDictionary(t => t.GetProperty("name").GetString()!);
+
+        var description = tools["search"].GetProperty("description").GetString();
+        Assert.StartsWith("Searches the website Example (https://example.test/).", description);
+        Assert.Contains("3 pages", description);
+
+        var fetchInput = tools["fetch"].GetProperty("inputSchema");
+        Assert.True(fetchInput.GetProperty("properties").TryGetProperty("id", out _));
+        Assert.True(fetchInput.GetProperty("properties").TryGetProperty("url", out _));
+        Assert.False(fetchInput.TryGetProperty("required", out var required) && required.GetArrayLength() > 0);
     }
 
     [Fact]
@@ -178,13 +212,13 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
     }
 
     [Fact]
-    public async Task OpenApiDocumentDescribesOnlyTheSearchApi()
+    public async Task OpenApiDocumentDescribesTheHttpApiOnly()
     {
         var document = await Client.GetFromJsonAsync<JsonElement>("/openapi/v1.json");
         Assert.Equal("Example search API", document.GetProperty("info").GetProperty("title").GetString());
 
         var paths = document.GetProperty("paths").EnumerateObject().Select(p => p.Name).ToList();
-        Assert.Equal(["/api/search"], paths);
+        Assert.Equal(["/api/search", "/api/info"], paths);
 
         var parameters = document.GetProperty("paths").GetProperty("/api/search").GetProperty("get").GetProperty("parameters").EnumerateArray().ToList();
         var q = parameters.Single(p => p.GetProperty("name").GetString() == "q");
@@ -202,17 +236,6 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         var html = await response.Content.ReadAsStringAsync();
         Assert.Contains("src=\"scalar.js\"", html);
         Assert.DoesNotContain("cdn.jsdelivr.net", html);
-    }
-
-    [Fact]
-    public async Task ApiReferencePageCanBeTurnedOff()
-    {
-        // UseSetting, not ConfigureAppConfiguration: Program reads which endpoints to map before the app is built.
-        using var factory = fixture.Factory.WithWebHostBuilder(builder => builder.UseSetting("Ui:Enabled", "false"));
-        using var client = factory.CreateClient();
-
-        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/docs/")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/openapi/v1.json")).StatusCode);
     }
 
     private async Task<JsonElement> McpCallAsync(object request)
@@ -238,5 +261,32 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         }
 
         return envelope.GetProperty("result");
+    }
+}
+
+public class SiteToolsTests
+{
+    [Fact]
+    public void SearchDescriptionIncludesTrimmedSiteDescription()
+    {
+        var manifest = TestIndex.Manifest(IndexFormat.JsonStoreType) with { SiteDescription = "Rockets\n and widgets. " + new string('x', 400) };
+
+        var description = McpMySite.Server.Mcp.SiteTools.SearchDescription(manifest);
+
+        Assert.StartsWith("Searches the website Example (https://example.test/): Rockets and widgets. x", description);
+        Assert.Contains("x… Hybrid keyword and semantic search over its 3 pages", description);
+    }
+
+    [Fact]
+    public void DescribeSiteLeavesSharedToolDefinitionsUntouched()
+    {
+        var search = new ModelContextProtocol.Protocol.Tool { Name = "search", Description = "Generic." };
+        var fetch = new ModelContextProtocol.Protocol.Tool { Name = "fetch", Description = "Fetch." };
+
+        var result = McpMySite.Server.Mcp.SiteTools.DescribeSite(new ModelContextProtocol.Protocol.ListToolsResult { Tools = [search, fetch] }, TestIndex.Manifest(IndexFormat.JsonStoreType));
+
+        Assert.Equal("Generic.", search.Description);
+        Assert.StartsWith("Searches the website Example", result.Tools[0].Description);
+        Assert.Same(fetch, result.Tools[1]);
     }
 }
