@@ -137,8 +137,7 @@ The image listens on port 8080 and runs as a non-root user.
 
 Five steps from nothing to an MCP server answering questions about your site. Run them from the root
 of a clone (section 3.1). The commands are the same on every OS; only setting environment variables
-differs, so pick the block for your shell. Step 5 needs an absolute index path because `dotnet run`
-starts the server in its project folder.
+differs, so pick the block for your shell.
 
 ### 4.1 macOS and Linux (bash, zsh)
 
@@ -156,7 +155,7 @@ mcpmysite build
 mcpmysite search "how can I contact you"
 
 # 5. Serve it
-Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
+Index__Path=index dotnet run --project src/McpMySite.Server
 ```
 
 ### 4.2 Windows PowerShell
@@ -175,7 +174,7 @@ mcpmysite build
 mcpmysite search "how can I contact you"
 
 # 5. Serve it
-$env:Index__Path = "$PWD\index"
+$env:Index__Path = "index"
 dotnet run --project src/McpMySite.Server
 ```
 
@@ -197,7 +196,7 @@ rem 4. Try a few queries without starting anything
 mcpmysite search "how can I contact you"
 
 rem 5. Serve it
-set Index__Path=%CD%\index
+set Index__Path=index
 dotnet run --project src/McpMySite.Server
 ```
 
@@ -643,7 +642,7 @@ a reader would understand out of context: "Writing: MCP servers, AI tooling, IoT
 
 ```bash
 # From source
-Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
+Index__Path=index dotnet run --project src/McpMySite.Server
 
 # Published
 Index__Path=/srv/index ASPNETCORE_URLS=http://0.0.0.0:8080 dotnet McpMySite.Server.dll
@@ -652,9 +651,9 @@ Index__Path=/srv/index ASPNETCORE_URLS=http://0.0.0.0:8080 dotnet McpMySite.Serv
 docker run -p 8080:8080 -e Index__Url=https://example.com/index/ -e AI_API_KEY=... mcp-my-site
 ```
 
-`dotnet run` starts the server in `src/McpMySite.Server` and listens on `http://localhost:5000`, as set
-in `Properties/launchSettings.json`. A relative `Index:Path` resolves from the server's working folder,
-not from where you typed the command, so pass an absolute path.
+`dotnet run` listens on `http://localhost:5000`, as set in `Properties/launchSettings.json`. A
+relative `Index:Path` resolves from the folder you run the command in; the server still reads its own
+`appsettings.json` from `src/McpMySite.Server`.
 
 The server starts even when the index cannot be loaded; it answers `503` on `/healthz`, returns tool
 errors on MCP calls and `503` on the search API, and keeps retrying on the poll interval. Once an
@@ -1250,7 +1249,7 @@ cache folder persists between CI runs (section 10.3). Crawling: raise `Crawl:Con
 
 **`/healthz` returns 503 with `"status": "no-index"`.**
 Read `lastError`. Typical causes: `Index:Path`/`Index:Url` not set or wrong (a relative `Index:Path`
-under `dotnet run` resolves from `src/McpMySite.Server`; `lastError` shows the full path it tried);
+resolves from the folder the server was started in; `lastError` shows the full path it tried);
 the URL is not reachable from the server; the manifest fails validation (unsupported format version,
 zero pages); data files disagree with the manifest (partial upload: publish the whole folder,
 manifest last).
