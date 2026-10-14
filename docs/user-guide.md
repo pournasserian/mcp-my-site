@@ -151,7 +151,7 @@ mcpmysite build
 mcpmysite search "how do I reset my password"
 
 # 5. Serve it (absolute path: dotnet run starts the server in its project folder)
-Index__Path="$PWD/index" dotnet run --project src/McpMySite.Server
+Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
 ```
 
 The server prints the URL it listens on (by default `http://localhost:5000`). Then:
@@ -314,6 +314,7 @@ which is why their shipped defaults are empty.
 |---|---|---|---|
 | `Site:Url` | string | (required) | Absolute `http(s)` URL of the site. Also the base for folder-sourced URLs. |
 | `Site:Name` | string | from the site | Display name used in the server instructions. Falls back to the home page's `og:site_name`, then the host name. |
+| `Site:Description` | string | from the site | One or two sentences on what the site is about, used in the server instructions. Falls back to the home page's meta description. |
 | `Source:Type` | `Crawl` or `Folder` | `Crawl` | Where pages come from. |
 | `Source:Folder` | string | | Folder of built HTML when `Source:Type` is `Folder`. Relative to the config file. |
 | `Source:FolderUrlStyle` | `Clean` or `File` | `Clean` | `Clean`: `about.html` becomes `/about`, `docs/index.html` becomes `/docs/`. `File`: paths keep `.html`. A `<link rel="canonical">` in the page wins over both. |
@@ -502,11 +503,34 @@ understand, or pages that genuinely have little text.
 
 ### 6.8 Server instructions from the index
 
-The indexer writes a short outline into the manifest, and the server hands it to MCP clients as its
-instructions: what site this is, how many pages, the content language, the main sections with a few
-page titles each, and how to use `search` and `fetch`. `Instructions:Preamble` adds your own text in
-front of it (for example, "Answer in the site's own voice and link to the page you used."). On the
-server, `Mcp:Instructions` replaces the whole text.
+The indexer writes short instructions into the manifest, and the server hands them to MCP clients
+in its `initialize` answer. They tell the model what the site is, when to use the server and how:
+
+- the site name, URL and description (`Site:Description`, or the home page's meta description), with
+  the description cut at 300 characters;
+- how many pages were indexed and the snapshot date;
+- when to use the server: questions about the site or its subjects, and answers that should rest on
+  the site rather than general knowledge;
+- how to use `search` and `fetch`, to cite the page URL, and to say so when nothing relevant is found;
+- the content language;
+- an outline: up to 12 top-level sections, largest first, each labelled with the title of its own
+  landing page (such as `/docs`) when that page was indexed, its page count and up to four page
+  titles, newest first.
+
+The text is built from the crawled pages by a fixed template, so the same site gives the same text
+whatever order the crawl found the pages in. It is kept to 2,000 characters: Claude Code is reported
+to cut server instructions at 2,048, and several servers share the model's attention anyway. When a
+site has more to say, the outline gives way first, dropping page titles and then whole sections (the
+last line then says how many were left out); everything above the outline always stays.
+
+`Instructions:Preamble` adds your own text in front (for example, "Answer in the site's own voice and
+link to the page you used."). It counts toward the 2,000 characters, so a long preamble shortens the
+outline, and the indexer warns when the preamble alone pushes the text past the limit. On the server,
+`Mcp:Instructions` replaces the whole text and is not checked.
+
+Section landing-page titles and the home page description do most of the work, so give them content
+a reader would understand out of context: "Writing: MCP servers, AI tooling, IoT" says more than
+"Blog".
 
 ## 7. The server
 
@@ -514,7 +538,7 @@ server, `Mcp:Instructions` replaces the whole text.
 
 ```bash
 # From source
-Index__Path="$PWD/index" dotnet run --project src/McpMySite.Server
+Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
 
 # Published
 Index__Path=/srv/index ASPNETCORE_URLS=http://0.0.0.0:8080 dotnet McpMySite.Server.dll
@@ -523,9 +547,9 @@ Index__Path=/srv/index ASPNETCORE_URLS=http://0.0.0.0:8080 dotnet McpMySite.Serv
 docker run -p 8080:8080 -e Index__Url=https://example.com/index/ -e OPENROUTER_API_KEY=... mcp-my-site
 ```
 
-`dotnet run` starts the server in `src/McpMySite.Server` and listens on `http://localhost:5000` (and
-`https://localhost:5001`), as set in `Properties/launchSettings.json`. A relative `Index:Path` resolves
-from the server's working folder, not from where you typed the command, so pass an absolute path.
+`dotnet run` starts the server in `src/McpMySite.Server` and listens on `http://localhost:5000`, as set
+in `Properties/launchSettings.json`. A relative `Index:Path` resolves from the server's working folder,
+not from where you typed the command, so pass an absolute path.
 
 The server starts even when the index cannot be loaded; it answers `503` on `/healthz`, returns tool
 errors on MCP calls and `503` on the search API, and keeps retrying on the poll interval. Once an
@@ -556,6 +580,9 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:DefaultLimit` | `10` | Results when `limit` is not given. |
 | `SearchApi:MaxLimit` | `20` | Upper bound for `limit`. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
+| `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the MCP playground at `/playground`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
+| `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
+| `Ui:StaleAfterDays` | `30` | The landing page and `/api/info` flag the index as stale when it is older than this. `0` turns the flag off. |
 | `RateLimiting:PermitPerMinute` | `60` | Requests per client IP per minute, shared across the MCP endpoint and the search API. Excess requests get `429`. |
 | `RateLimiting:UseForwardedHeaders` | `true` | Take the client IP from `X-Forwarded-For`, as set by Azure App Service and most reverse proxies. Set `false` when clients reach Kestrel directly. |
 | `Telemetry:LogQueryText` | `false` | Include query text in logs and trace tags. Off by default because queries can carry personal data. |
@@ -594,6 +621,11 @@ URL, and the server picks it up within the poll interval.
   it); the response is a single JSON or SSE message.
 - Capabilities: tools only. No resources, no prompts.
 - `initialize` returns the server name and version and the instructions described in section 6.8.
+- `tools/list` describes `search` with the loaded site's name, URL, description and page count, so a
+  model knows which site the server covers even when its client ignores the instructions.
+- The tool shapes follow the `search` and `fetch` contract ChatGPT uses for connectors and deep
+  research: every search result has an `id`, and `fetch` takes that `id` and returns the page as
+  `text`. Other clients can keep passing a `url`.
 
 **Tool `search`**
 
@@ -609,7 +641,8 @@ Returns structured content:
   "query": "reset password",
   "keywordOnly": false,
   "results": [
-    { "title": "Account settings", "url": "https://example.com/help/account",
+    { "id": "https://example.com/help/account",
+      "title": "Account settings", "url": "https://example.com/help/account",
       "snippet": "…plain text excerpt around the first match…",
       "section": "Security > Passwords", "score": 0.0325 }
   ]
@@ -617,17 +650,20 @@ Returns structured content:
 ```
 
 `keywordOnly` is `true` when the query could not be embedded and the result came from keyword search
-alone. Scores are reciprocal-rank-fusion scores, useful for ordering, not as probabilities.
+alone. Scores are reciprocal-rank-fusion scores, useful for ordering, not as probabilities. `id` is
+what to pass to `fetch`; today it is the page URL.
 
 **Tool `fetch`**
 
 | Parameter | Type | Meaning |
 |---|---|---|
-| `url` | string, required | A page URL, normally taken from a `search` result. Scheme, host case, trailing slash and fragment differences are tolerated. |
+| `id` | string, optional | The `id` of a `search` result. |
+| `url` | string, optional | A page URL, as an alternative to `id`. Scheme, host case, trailing slash and fragment differences are tolerated. |
 
-Returns `url`, `title`, `description`, `language`, `modified` and the full page as `markdown`. An
-unknown URL is a tool error ("No indexed page at ..."), not a protocol error, so the model can recover
-by searching again.
+Pass one of the two; `id` wins when both are given. Returns `id`, `url`, `title`, the full page as
+Markdown in `text`, `description`, `language` and `modified`. Passing neither, or an unknown page, is
+a tool error ("No indexed page at ..."), not a protocol error, so the model can recover by searching
+again.
 
 Both tools are annotated read-only, idempotent and closed-world. The same response is also included
 as a JSON text block for clients that ignore structured content.
@@ -668,6 +704,12 @@ inserted into the page as HTML. `title` and `description` are plain text and mus
 caller. Search runs on submit only; there is no search-as-you-type endpoint, and the per-IP rate limit
 is sized for that.
 
+The API is described by an OpenAPI 3.1 document at `/openapi/v1.json`, titled after the loaded site.
+Point a client generator or an API tool at it. `/docs` renders the same document as an interactive
+reference (Scalar) where you can try queries; its script is served by the server itself, so the page
+works without access to a CDN. Set `Ui:Enabled` to `false` to drop the page. The MCP endpoint is not
+part of the document; MCP clients discover its tools through `tools/list`.
+
 ### 7.6 Rate limiting
 
 Every MCP and search request counts against a fixed one-minute window per client IP
@@ -692,10 +734,60 @@ The client IP is taken from `X-Forwarded-For` when `RateLimiting:UseForwardedHea
 ```
 
 `lastError` holds the most recent load or refresh failure even while an older index is still being
-served, which makes it the first place to look when a new index did not appear. `GET /` returns a
-one-line text description with the configured paths.
+served, which makes it the first place to look when a new index did not appear.
 
-### 7.8 Telemetry
+`GET /api/info` returns everything the landing page shows, as JSON: the site (name, URL, description,
+main language), the index (build and load times, `stale`, page and chunk counts, store, embedding
+model, indexer version and the build `stats` described in section 16.1), the absolute URLs of every
+endpoint, whether MCP needs a key, and the server name and version. It answers `503` with the same
+shape and no `index` until an index is loaded, and it is in the OpenAPI document.
+
+### 7.8 The landing page
+
+With `Ui:Enabled` on, `GET /` is a page for people who open the server's URL:
+
+- the site's name, description and link;
+- how to connect: the MCP URL with a copy button and ready-made setup for Claude Code, Claude.ai and
+  Claude Desktop, ChatGPT, VS Code, Cursor and stdio-only clients. When `Mcp:ApiKey` is set it says a
+  key is needed (never the key) and leaves out the clients that cannot send one;
+- what is indexed: pages, approximate words, sections with their page counts, build date, newest page
+  and languages;
+- the last build: source, duration, pages fetched and skipped, errors, embeddings generated and cached,
+  chunks, embedding model and store;
+- the search API with an example and links to the OpenAPI document and reference;
+- a notice when the index is older than `Ui:StaleAfterDays`.
+
+The page is rendered on the server, so search engines and link previews see all of it; script only
+powers the copy buttons. It carries a description, a canonical link, Open Graph tags and schema.org
+`WebAPI` data. `robots.txt` keeps crawlers out of the MCP endpoint and `/api/`, and points them at
+`sitemap.xml`, which lists `/`, `/playground` and `/docs/` with the index build date. Until an index is loaded the
+page answers `503` and asks not to be indexed. With `Ui:Enabled` off, `/` is a short text summary and
+`robots.txt` disallows everything.
+
+`GET /llms.txt` follows the [llms.txt](https://llmstxt.org/) convention: the site name and
+description, a line on how to reach this server over MCP and HTTP, then every indexed page as a
+Markdown link with its description, grouped under the same section names as the landing page and
+newest first. It is built once per loaded index and kept in memory. It describes the site, so you
+can also publish a copy at your site's own `/llms.txt`.
+
+Indexes from indexers older than this feature have no build statistics; the page then shows the
+manifest's page and chunk counts and build date only. Rebuild to get the rest.
+
+### 7.9 The MCP playground
+
+`GET /playground` is a small MCP client in the page, so anyone can try the server without installing
+one. It connects to this server's MCP endpoint (on load, or after an API key is entered when
+`Mcp:ApiKey` is set), shows the server name, protocol version, capabilities and the instructions it
+gives to models, then builds a form for every tool from its input schema. Search results come back as
+a list with a "Fetch this page" button, fetched pages as their Markdown, and every JSON-RPC request
+and response is logged with its timing.
+
+The requests are the real thing: same endpoint, same rate limit, same API key check as any MCP client.
+The key stays in the page and is not stored. The playground always calls the endpoint on its own
+origin, so it needs no CORS settings. It needs JavaScript; the server home page covers clients for
+anyone without it.
+
+### 7.10 Telemetry
 
 The server is instrumented with OpenTelemetry (incoming requests, outgoing HTTP calls, runtime
 metrics) plus its own signals:
@@ -734,7 +826,8 @@ Query text is not logged or tagged unless `Telemetry:LogQueryText` is `true`.
 ## 8. Connecting MCP clients
 
 The endpoint is `https://<your-host>/mcp` (or whatever `Mcp:Path` is). Use the streamable HTTP
-transport. Examples below assume no API key; where a key is set, add the header shown.
+transport. Examples below assume no API key; where a key is set, add the header shown. The server's
+landing page (section 7.8) shows the same setup with its own URL filled in.
 
 **Claude Code**
 
@@ -768,7 +861,8 @@ claude mcp add --transport http mysite https://example.com/mcp --header "Authori
 These clients cannot send a static header, so leave `Mcp:ApiKey` unset for them and rely on the rate
 limit; this is the public mode the spec describes.
 
-**MCP Inspector**, for debugging:
+**In the browser.** The server's own `/playground` page (section 7.9) lists the tools and calls them,
+which covers most quick checks. For deeper debugging use the **MCP Inspector**:
 
 ```bash
 npx @modelcontextprotocol/inspector
@@ -1214,12 +1308,13 @@ index/
 |---|---|
 | `formatVersion` | Index format version; `1` today |
 | `storeType` | `json` or `sqlite` |
-| `Site:Url`, `Site:Name` | The site |
+| `siteUrl`, `siteName`, `siteDescription` | The site |
 | `embeddingModel`, `embeddingDimensions` | How vectors were produced; the server embeds queries the same way |
 | `builtAt` | Build time; a change triggers a reload |
 | `pageCount`, `chunkCount` | Checked against the data files on load |
 | `instructions` | Generated MCP server instructions |
 | `indexerVersion` | Indexer that wrote it |
+| `stats` | Numbers from the run, for status pages: `source`, `startedAt`, `durationSeconds`, `pagesFetched`, `pagesSkippedNoIndex`, `pagesSkippedDuplicate`, `pagesSkippedEmpty`, `errors`, `embeddingsGenerated`, `embeddingsFromCache`, `words` (approximate), `newestPageModified`, `languages` (pages per language), `sections` (`path`, `title`, `pages`). Absent in indexes from older indexers. |
 
 Page record: `id`, `url`, `title`, `description`, `language`, `headings[]`, `modified`, `markdown`.
 Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equals its row in
@@ -1239,8 +1334,15 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 |---|---|---|---|
 | `POST {Mcp:Path}` | MCP JSON-RPC (default `/mcp`) | yes | optional |
 | `GET {SearchApi:Path}?q=&limit=` | Search API (default `/api/search`) | yes | no |
+| `GET /api/info` | Site, index, build statistics and endpoint URLs as JSON | no | no |
+| `GET /openapi/v1.json` | OpenAPI document for the search API and `/api/info` | no | no |
+| `GET /docs` | Interactive API reference, when `Ui:Enabled` | no | no |
 | `GET /healthz` | Health and index status | no | no |
-| `GET /` | One-line description | no | no |
+| `GET /` | Landing page, when `Ui:Enabled`; otherwise a one-line text description | no | no |
+| `GET /playground` | MCP playground, when `Ui:Enabled` | no | no |
+| `GET /llms.txt` | The indexed pages as a Markdown list for language models, when `Ui:Enabled` | no | no |
+| `GET /robots.txt` | Crawler rules | no | no |
+| `GET /sitemap.xml` | Pages for search engines, when `Ui:Enabled` | no | no |
 
 ### 16.4 Glossary
 

@@ -50,6 +50,23 @@ public sealed class SearchApiOptions
     public int MaxQueryLength { get; set; } = 500;
 }
 
+public sealed class UiOptions
+{
+    public const string SectionName = "Ui";
+
+    /// <summary>Serve the pages meant for people: the landing page and the API reference. The OpenAPI document is always served.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Public base URL of this server, such as https://mcp.example.com, used for canonical links, the sitemap and
+    /// connection snippets. Empty takes it from each request.
+    /// </summary>
+    public string? PublicUrl { get; set; }
+
+    /// <summary>The landing page flags the index as out of date when it is older than this. 0 never does.</summary>
+    public int StaleAfterDays { get; set; } = 30;
+}
+
 public sealed class RateLimitOptions
 {
     public const string SectionName = "RateLimiting";

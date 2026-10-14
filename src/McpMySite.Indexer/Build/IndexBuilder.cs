@@ -43,20 +43,31 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
 
             var builtAt = DateTimeOffset.UtcNow;
             var resolvedSiteName = config.Site.Name ?? siteName ?? siteUri.Host;
+            var homeKey = UrlKey.Normalize(siteUri.ToString());
+            var siteDescription = config.Site.Description ?? pages.FirstOrDefault(p => UrlKey.Normalize(p.Url) == homeKey)?.Description;
             var manifest = new IndexManifest
             {
                 FormatVersion = IndexFormat.CurrentVersion,
                 StoreType = config.Output.Store,
                 SiteUrl = siteUri.ToString(),
                 SiteName = resolvedSiteName,
+                SiteDescription = siteDescription,
                 EmbeddingModel = config.Embeddings.Model,
                 EmbeddingDimensions = config.Embeddings.Dimensions,
                 BuiltAt = builtAt,
                 PageCount = pages.Count,
                 ChunkCount = chunks.Count,
-                Instructions = SiteOutline.Build(resolvedSiteName, siteUri.ToString(), pages, builtAt, config.Instructions.Preamble),
+                Instructions = SiteOutline.Build(resolvedSiteName, siteUri.ToString(), siteDescription, pages, builtAt, config.Instructions.Preamble),
                 IndexerVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3),
+                Stats = BuildStats(report, config.Source.Type, pages, stopwatch.Elapsed),
             };
+
+            if (manifest.Instructions.Length > SiteOutline.MaxChars)
+            {
+                logger.LogWarning(
+                    "The server instructions are {Length} characters, over {Max}; some MCP clients cut longer text. Shorten Instructions:Preamble.",
+                    manifest.Instructions.Length, SiteOutline.MaxChars);
+            }
 
             var writer = IndexStoreOpener.CreateWriter(config.Output.Store);
             await writer.WriteAsync(outputDirectory, manifest, pages, chunks, vectors, cancellationToken);
@@ -179,6 +190,24 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
         report.Errors.AddRange(source.Errors.Select(e => $"{e.Url}: {e.Message}"));
         return (pages, chunks, embeddingTexts, siteName);
     }
+
+    internal static IndexStats BuildStats(BuildReport report, SourceType source, IReadOnlyList<PageDocument> pages, TimeSpan elapsed) => new()
+    {
+        Source = source.ToString().ToLowerInvariant(),
+        StartedAt = report.StartedAt,
+        DurationSeconds = Math.Round(elapsed.TotalSeconds, 1),
+        PagesFetched = report.PagesFetched,
+        PagesSkippedNoIndex = report.PagesSkippedNoIndex,
+        PagesSkippedDuplicate = report.PagesSkippedDuplicate,
+        PagesSkippedEmpty = report.PagesSkippedEmpty,
+        Errors = report.Errors.Count,
+        EmbeddingsGenerated = report.EmbeddingsGenerated,
+        EmbeddingsFromCache = report.EmbeddingsFromCache,
+        Words = pages.Sum(p => (long)p.Markdown.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length),
+        NewestPageModified = pages.Max(p => p.Modified),
+        Languages = pages.GroupBy(p => p.Language).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count()),
+        Sections = SiteOutline.Sections(pages).Select(s => new SectionStats(s.Path, s.Title, s.Pages.Count)).ToList(),
+    };
 
     private static void CheckSafety(SafetyConfig safety, BuildReport report, int pageCount)
     {

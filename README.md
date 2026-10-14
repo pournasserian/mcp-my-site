@@ -7,20 +7,29 @@ built for sites under 1,000 pages. .NET 10, MIT licence.
 
 ## Quick start
 
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and an
+[OpenRouter](https://openrouter.ai) API key for embeddings. From a fresh clone:
+
 ```bash
-mcpmysite init https://example.com          # writes appsettings.json for the indexer
-export OPENROUTER_API_KEY=sk-or-...         # embeddings key, never stored in files
-mcpmysite build                             # crawls, extracts, embeds, writes ./index
-mcpmysite search "how do I reset my password"
-Index__Path="$PWD/index" dotnet run --project src/McpMySite.Server
+git clone https://github.com/pournasserian/mcp-my-site.git
+cd mcp-my-site
+export OPENROUTER_API_KEY=sk-or-...    # embeddings key, never stored in files
+dotnet run --project src/McpMySite.Indexer -- init https://example.com
+dotnet run --project src/McpMySite.Indexer -- build
+dotnet run --project src/McpMySite.Indexer -- search "how do I reset my password"
+Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
 ```
 
-Then connect an MCP client to `http://localhost:5000/mcp`, or call
+On Windows PowerShell, set the variables with `$env:OPENROUTER_API_KEY = "sk-or-..."` and
+`$env:Index__Path = "$PWD/index"` instead.
+
+`init` writes `appsettings.json`, `build` crawls the site and writes `./index`, and `search` checks the
+index before you serve it. Then connect an MCP client to `http://localhost:5000/mcp`, or open
 `http://localhost:5000/api/search?q=password`.
 
-`mcpmysite` is the indexer CLI; install it with `dotnet pack src/McpMySite.Indexer -c Release -o nupkg`
-and `dotnet tool install --global mcpmysite --add-source nupkg`, or run it with
-`dotnet run --project src/McpMySite.Indexer --`.
+Everything after `--` goes to the indexer CLI. To type `mcpmysite build` instead, install it as a
+.NET tool: `dotnet pack src/McpMySite.Indexer -c Release -o nupkg`, then
+`dotnet tool install --global mcpmysite --add-source nupkg`.
 
 ## Documentation
 

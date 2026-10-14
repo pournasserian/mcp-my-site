@@ -77,7 +77,7 @@ flowchart TB
 |---|---|---|
 | `McpMySite.Core` | Everything both apps need: manifest, page and chunk records, `IIndexStore`/`IIndexWriter`, the JSON and SQLite stores, BM25, vector maths, rank fusion, snippets, the embedding generator factory | Microsoft.Extensions.AI (+ .OpenAI), OpenAI, Microsoft.Data.Sqlite |
 | `McpMySite.Indexer` | The `mcpmysite` tool. Owns sources, extraction, chunking, the embedding cache, safety checks and the run report | AngleSharp (HTML), ReverseMarkdown (HTML to Markdown), System.CommandLine, Microsoft.Extensions.Hosting (configuration and logging) |
-| `McpMySite.Server` | Hosts the MCP server and the search API, loads and refreshes the index, rate limits, exports telemetry | ModelContextProtocol.AspNetCore, OpenTelemetry (+ Azure Monitor exporter) |
+| `McpMySite.Server` | Hosts the MCP server and the search API, loads and refreshes the index, rate limits, exports telemetry | ModelContextProtocol.AspNetCore, Microsoft.AspNetCore.OpenApi, Scalar.AspNetCore (API reference page), OpenTelemetry (+ Azure Monitor exporter) |
 | `McpMySite.Tests` | Unit tests, store contract tests, the web app booted in-process | xunit, Microsoft.AspNetCore.Mvc.Testing |
 
 Core has no dependency on ASP.NET Core, Azure or the crawler libraries, so a future store or
@@ -92,11 +92,12 @@ classDiagram
     class IndexManifest {
         formatVersion
         storeType
-        siteUrl, siteName
+        siteUrl, siteName, siteDescription
         embeddingModel, embeddingDimensions
         builtAt
         pageCount, chunkCount
         instructions
+        stats
     }
     class PageDocument {
         id
@@ -333,6 +334,12 @@ flowchart TB
     Key --> MCP["MapMcp<br/>ModelContextProtocol.AspNetCore<br/>stateless"]
     Key --> SAPI["GET /api/search<br/>minimal API"]
     FH --> H["GET /healthz, GET /"]
+    FH --> Docs["GET /openapi/v1.json<br/>GET /docs (Scalar)"]
+    FH --> Pages["GET /, /playground, robots.txt, sitemap.xml<br/>Razor components, server-rendered"]
+    FH --> Info["GET /api/info"]
+    Pages --> SI["SiteInfo<br/>site, index, stats, endpoint URLs"]
+    Info --> SI
+    SI --> Holder
 
     MCP --> Tools["SiteTools<br/>search, fetch"]
     Tools --> SS["SiteSearchService"]
@@ -352,7 +359,12 @@ flowchart TB
 | `IndexRefreshService` | Loads once at startup and then on a timer. |
 | `SiteSearchService` | The single search path: embed query (with fallback), call the store, emit metrics and spans. Caches the embedding generator per (model, dimensions). |
 | `SiteTools` | The two MCP tools. Thin: validate arguments, call the service, shape the result, turn "no index" into a tool error. |
-| `SearchEndpoints` | The HTTP search endpoint with its validation and status codes. |
+| `SearchEndpoints` | The HTTP search endpoint with its validation, status codes and OpenAPI metadata. |
+| `OpenApiSetup` | The OpenAPI document (titled after the loaded site, MCP excluded) and the Scalar reference page. |
+| `SiteInfo`, `InfoEndpoints` | One model of the site, the loaded index, its build stats and the endpoint URLs, served as `/api/info` and rendered by the landing page. |
+| `LlmsTxt` | Builds `/llms.txt` from every page of the loaded store, grouped by the manifest's sections, and caches it per index build and base URL. |
+| `PlaygroundPage` | The MCP playground: a server-rendered page whose inline script is a minimal Streamable HTTP client (initialize, tools/list, tools/call), with forms generated from input schemas. It writes server data with `textContent` only. |
+| `PageEndpoints`, `LandingPage`, `PageShell` | The landing page as a Razor component rendered on the server through `RazorComponentResult`, plus `robots.txt` and `sitemap.xml`. `PageShell` holds the document head (description, canonical, Open Graph, schema.org) and the inlined styles. |
 | `Program` | Wiring: options, CORS policies bound from options, rate limiter partitioned by IP, API key middleware, telemetry exporters, endpoints. |
 
 ### 5.2 Startup and hot swap
@@ -443,6 +455,7 @@ The manifest is the contract between indexer and server.
 | Rule | Why |
 |---|---|
 | `formatVersion` is bumped on any incompatible change to the files; the server accepts the current and the previous version | Lets an index built by the previous indexer keep serving during a rolling upgrade |
+| New manifest fields are optional and do not bump the version (`siteDescription` and `stats` came this way) | Older servers ignore fields they do not know, and newer servers treat a missing field as absent |
 | The manifest is written last; SQLite is written to a temp file and renamed | A reader (or the poller) never sees a manifest that points at half-written data |
 | Data files are cross-checked against the manifest on load (vector length, page and chunk counts) | A partial upload is detected and rejected instead of serving wrong results |
 | The manifest records the embedding model and dimensions | The server embeds queries identically; switching models is an index rebuild, not a server change |
@@ -488,6 +501,8 @@ endpoint and metrics).
 | Chunks carry title and heading path | Bare text chunks | Headings disambiguate short sections and improve recall on section-level questions |
 | Per-IP fixed-window rate limit built in | Rely on a gateway | Works everywhere the container runs; a gateway (APIM) can still sit in front |
 | Fail closed on build, fail open on query | Fail open everywhere, or fail closed everywhere | A broken index is worse than a stale one; a degraded answer is better than no answer |
+| Landing page rendered on the server with Razor components | A static page that fetches `/api/info`; a JavaScript framework | Crawlers and link previews see the full content; Razor encodes crawled titles and descriptions; no front-end build; ships in the shared framework |
+| Build stats in the manifest | Server reads `report.json` | Works the same for `Index:Url` and `Index:Path`; the report stays an owner's diagnostic file |
 
 ## 9. Extension points
 
