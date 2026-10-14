@@ -4,9 +4,11 @@ using System.Xml.Linq;
 
 namespace McpMySite.Server.Pages;
 
-/// <summary>The landing page and the files search engines look for: robots.txt and sitemap.xml.</summary>
+/// <summary>The landing page, the MCP playground and the files search engines look for: robots.txt and sitemap.xml.</summary>
 public static class PageEndpoints
 {
+    public const string PlaygroundPath = "/playground";
+
     private static readonly XNamespace SitemapNamespace = "http://www.sitemaps.org/schemas/sitemap/0.9";
 
     public static void MapPages(this WebApplication app, UiOptions ui)
@@ -33,6 +35,23 @@ public static class PageEndpoints
             };
         }).ExcludeFromDescription();
 
+        app.MapGet(PlaygroundPath, (HttpRequest request, IndexHolder holder, IOptions<McpOptions> mcp, IOptions<SearchApiOptions> searchApi, IOptions<UiOptions> options) =>
+        {
+            var baseUrl = SiteInfo.BaseUrl(request, options.Value);
+            var info = SiteInfo.Create(holder, mcp.Value, searchApi.Value, options.Value, baseUrl, DateTimeOffset.UtcNow);
+            return new RazorComponentResult<PlaygroundPage>(new { Info = info, BaseUrl = baseUrl, EndpointPath = request.PathBase + mcp.Value.Path });
+        }).ExcludeFromDescription();
+
+        app.MapGet("/llms.txt", async (HttpRequest request, IndexHolder holder, LlmsTxt llms, IOptions<McpOptions> mcp, IOptions<SearchApiOptions> searchApi, IOptions<UiOptions> options, CancellationToken cancellationToken) =>
+        {
+            var baseUrl = SiteInfo.BaseUrl(request, options.Value);
+            var info = SiteInfo.Create(holder, mcp.Value, searchApi.Value, options.Value, baseUrl, DateTimeOffset.UtcNow);
+            var text = await llms.GetAsync(info, baseUrl, cancellationToken);
+            return text is null
+                ? Results.Text("No index is loaded yet.\n", "text/plain; charset=utf-8", statusCode: StatusCodes.Status503ServiceUnavailable)
+                : Results.Text(text, "text/plain; charset=utf-8");
+        }).ExcludeFromDescription();
+
         app.MapGet("/sitemap.xml", (HttpRequest request, IndexHolder holder, IOptions<UiOptions> options) =>
             Results.Text(Sitemap(SiteInfo.BaseUrl(request, options.Value), holder.Current?.Manifest.BuiltAt), "application/xml; charset=utf-8"))
             .ExcludeFromDescription();
@@ -57,7 +76,7 @@ public static class PageEndpoints
     internal static string Sitemap(string baseUrl, DateTimeOffset? builtAt)
     {
         var lastModified = builtAt?.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        var urls = new[] { baseUrl + "/", baseUrl + OpenApiSetup.ReferencePath + "/" }.Select(url => new XElement(SitemapNamespace + "url",
+        var urls = new[] { baseUrl + "/", baseUrl + PlaygroundPath, baseUrl + OpenApiSetup.ReferencePath + "/" }.Select(url => new XElement(SitemapNamespace + "url",
             new XElement(SitemapNamespace + "loc", url),
             lastModified is null ? null : new XElement(SitemapNamespace + "lastmod", lastModified)));
         var document = new XDocument(new XDeclaration("1.0", "utf-8", null), new XElement(SitemapNamespace + "urlset", urls));

@@ -1,3 +1,4 @@
+using McpMySite.Server.Api;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -44,6 +45,23 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
     }
 
     [Fact]
+    public async Task PlaygroundPageServesTheBrowserClient()
+    {
+        var response = await Client.GetAsync("/playground");
+        response.EnsureSuccessStatusCode();
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains("<title>Try the Example MCP server</title>", html);
+        Assert.Contains("<link rel=\"canonical\" href=\"http://localhost/playground\"", html);
+        Assert.Contains("data-endpoint=\"/mcp\"", html);
+        Assert.Contains("data-requires-key=\"true\"", html);
+        Assert.Contains("id=\"api-key\"", html);
+        Assert.Contains("'tools/call'", html);
+
+        Assert.Contains("href=\"/playground\"", await Client.GetStringAsync("/"));
+    }
+
+    [Fact]
     public async Task InfoApiDescribesSiteIndexAndEndpoints()
     {
         var info = await Client.GetFromJsonAsync<JsonElement>("/api/info");
@@ -72,7 +90,45 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         var xml = await sitemap.Content.ReadAsStringAsync();
         Assert.StartsWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>", xml);
         Assert.Contains("<loc>http://localhost/</loc>", xml);
+        Assert.Contains("<loc>http://localhost/playground</loc>", xml);
         Assert.Contains("<lastmod>2026-10-10</lastmod>", xml);
+    }
+
+    [Fact]
+    public async Task LlmsTxtListsEveryPageBySection()
+    {
+        var response = await Client.GetAsync("/llms.txt");
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
+        var text = await response.Content.ReadAsStringAsync();
+
+        Assert.StartsWith("# Example\n\nThe 3 pages of https://example.test/, as indexed on 2026-10-10.", text);
+        Assert.Contains("http://localhost/mcp", text);
+        Assert.Contains("## /docs\n\n- [Rockets](https://example.test/docs/rockets)\n- [Widgets](https://example.test/docs/widgets)\n", text);
+        Assert.Contains("## Home\n\n- [Home](https://example.test/): Welcome page\n", text);
+        Assert.Contains("href=\"/llms.txt\"", await Client.GetStringAsync("/"));
+    }
+
+    [Fact]
+    public void LlmsTxtUsesSectionNamesAndEscapesLinkText()
+    {
+        var manifest = TestIndex.Manifest(IndexFormat.JsonStoreType) with
+        {
+            SiteDescription = "Rockets\nand widgets.",
+            Stats = new IndexStats { Sections = [new SectionStats("/docs", "Documentation", 2), new SectionStats("/", null, 1)] },
+        };
+        var index = new IndexSummary(manifest.BuiltAt, null, false, 3, 4, "json", 1, "m", 4, null, manifest.Stats);
+        var info = new SiteInfo("ok", new SiteSummary("Example", manifest.SiteUrl, manifest.SiteDescription, "en"), index,
+            new EndpointUrls("https://mcp.example.test/mcp", false, null, "https://mcp.example.test/openapi/v1.json", null), new ServerSummary("s", "1"));
+        PageDocument[] pages = [.. TestIndex.Pages, new() { Id = 4, Url = "https://example.test/docs/brackets", Title = "Use [square] brackets", Markdown = "x" }];
+
+        var text = McpMySite.Server.Pages.LlmsTxt.Build(info, pages);
+
+        Assert.StartsWith("# Example\n\n> Rockets and widgets.\n\n", text);
+        Assert.Contains("(tools `search` and `fetch`).\n", text);
+        Assert.Contains("## Documentation\n", text);
+        Assert.True(text.IndexOf("## Documentation", StringComparison.Ordinal) < text.IndexOf("## Home", StringComparison.Ordinal));
+        Assert.Contains("- [Use \\[square\\] brackets](https://example.test/docs/brackets)\n", text);
     }
 
     [Fact]
@@ -103,6 +159,7 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
 
         var info = await client.GetAsync("/api/info");
         Assert.Equal(HttpStatusCode.ServiceUnavailable, info.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/llms.txt")).StatusCode);
     }
 
     [Fact]
@@ -116,6 +173,8 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         Assert.Equal("text/plain", home.Content.Headers.ContentType?.MediaType);
         Assert.Equal("User-agent: *\nDisallow: /\n", await client.GetStringAsync("/robots.txt"));
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/sitemap.xml")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/playground")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/llms.txt")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/docs/")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/openapi/v1.json")).StatusCode);
     }

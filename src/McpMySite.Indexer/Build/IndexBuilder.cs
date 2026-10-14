@@ -62,6 +62,13 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
                 Stats = BuildStats(report, config.Source.Type, pages, stopwatch.Elapsed),
             };
 
+            if (manifest.Instructions.Length > SiteOutline.MaxChars)
+            {
+                logger.LogWarning(
+                    "The server instructions are {Length} characters, over {Max}; some MCP clients cut longer text. Shorten Instructions:Preamble.",
+                    manifest.Instructions.Length, SiteOutline.MaxChars);
+            }
+
             var writer = IndexStoreOpener.CreateWriter(config.Output.Store);
             await writer.WriteAsync(outputDirectory, manifest, pages, chunks, vectors, cancellationToken);
             logger.LogInformation("Wrote {Store} index with {Pages} pages and {Chunks} chunks to {Directory}", config.Output.Store, pages.Count, chunks.Count, outputDirectory);

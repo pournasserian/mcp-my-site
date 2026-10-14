@@ -18,6 +18,7 @@
                 <a href="#connect">Connect</a>
                 <a href="#content">What is indexed</a>
                 <a href="#build">Last build</a>
+                <a href="@PageEndpoints.PlaygroundPath">Try it in the browser</a>
             }
             @if (Info.Endpoints.SearchApi is not null)
             {
@@ -52,6 +53,7 @@
                     <code id="mcp-url">@Info.Endpoints.Mcp</code>
                     <button type="button" class="copy" data-copy="mcp-url">Copy</button>
                 </div>
+                <p>To see what an assistant gets back, try the tools in the <a href="@PageEndpoints.PlaygroundPath">MCP playground</a>; no client needed.</p>
                 @if (Info.Endpoints.McpRequiresKey)
                 {
                     <p class="notice">This server needs an API key from its owner, sent as <code>Authorization: Bearer &lt;key&gt;</code>. Clients that cannot send a header, such as Claude.ai and ChatGPT, cannot connect.</p>
@@ -92,6 +94,7 @@
 
                 <h3>Tools</h3>
                 <p><code>search</code> finds the best matching pages for a question or keywords, with a snippet each. <code>fetch</code> returns a whole page as Markdown. Both are read-only.</p>
+                <p>Every indexed page is also listed for language models in <a href="/llms.txt">llms.txt</a>.</p>
             </section>
 
             <section id="content" aria-labelledby="content-title">
