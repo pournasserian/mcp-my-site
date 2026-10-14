@@ -152,7 +152,7 @@ export AI_API_KEY=sk-...
 mcpmysite build
 
 # 4. Try a few queries without starting anything
-mcpmysite search "how do I reset my password"
+mcpmysite search "how can I contact you"
 
 # 5. Serve it
 Index__Path=index dotnet run --project src/McpMySite.Server
@@ -171,7 +171,7 @@ $env:AI_API_KEY = "sk-..."
 mcpmysite build
 
 # 4. Try a few queries without starting anything
-mcpmysite search "how do I reset my password"
+mcpmysite search "how can I contact you"
 
 # 5. Serve it
 $env:Index__Path = "index"
@@ -193,7 +193,7 @@ rem 3. Build the index into .\index
 mcpmysite build
 
 rem 4. Try a few queries without starting anything
-mcpmysite search "how do I reset my password"
+mcpmysite search "how can I contact you"
 
 rem 5. Serve it
 set Index__Path=index
@@ -233,7 +233,7 @@ The server prints the URL it listens on (by default `http://localhost:5000`). Th
 | URL | What you get |
 |---|---|
 | `http://localhost:5000/healthz` | JSON with the loaded index: site, page count, build time |
-| `http://localhost:5000/api/search?q=password` | JSON search results |
+| `http://localhost:5000/api/search?q=contact` | JSON search results |
 | `http://localhost:5000/mcp` | The MCP endpoint for agents (POST, JSON-RPC) |
 
 Point an MCP client at `http://localhost:5000/mcp` (section 8) and ask it something about the site.
@@ -742,13 +742,13 @@ Returns structured content:
 
 ```json
 {
-  "query": "reset password",
+  "query": "contact email",
   "keywordOnly": false,
   "results": [
-    { "id": "https://example.com/help/account",
-      "title": "Account settings", "url": "https://example.com/help/account",
+    { "id": "https://example.com/contact",
+      "title": "Contact", "url": "https://example.com/contact",
       "snippet": "…plain text excerpt around the first match…",
-      "section": "Security > Passwords", "score": 0.0325 }
+      "section": "Get in touch > Email", "score": 0.0325 }
   ]
 }
 ```
@@ -787,16 +787,16 @@ GET /api/search?q=<text>&limit=<n>
 
 ```json
 {
-  "query": "reset password",
+  "query": "contact email",
   "keywordOnly": false,
   "results": [
     {
-      "title": "Account settings",
-      "url": "https://example.com/help/account",
-      "description": "Manage your account and security settings.",
-      "snippet": "…You can reset your password from the Security tab…",
-      "highlightedSnippet": "…You can <mark>reset</mark> your <mark>password</mark> from the Security tab…",
-      "section": ["Security", "Passwords"],
+      "title": "Contact",
+      "url": "https://example.com/contact",
+      "description": "How to reach us by email or phone.",
+      "snippet": "…To contact us, send an email to hello@example.com…",
+      "highlightedSnippet": "…To <mark>contact</mark> us, send an <mark>email</mark> to hello@example.com…",
+      "section": ["Get in touch", "Email"],
       "score": 0.0325
     }
   ]

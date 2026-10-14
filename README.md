@@ -18,9 +18,9 @@ macOS and Linux:
 git clone https://github.com/pournasserian/mcp-my-site.git
 cd mcp-my-site
 export AI_API_KEY=sk-...
-dotnet run --project src/McpMySite.Indexer -- init https://example.com    # writes appsettings.json
-dotnet run --project src/McpMySite.Indexer -- build                       # crawls the site into ./index
-dotnet run --project src/McpMySite.Indexer -- search "reset my password"  # checks the index
+dotnet run --project src/McpMySite.Indexer -- init https://example.com       # writes appsettings.json
+dotnet run --project src/McpMySite.Indexer -- build                          # crawls the site into ./index
+dotnet run --project src/McpMySite.Indexer -- search "how can I contact you" # checks the index
 Index__Path=index dotnet run --project src/McpMySite.Server
 ```
 
@@ -32,7 +32,7 @@ cd mcp-my-site
 $env:AI_API_KEY = "sk-..."
 dotnet run --project src/McpMySite.Indexer -- init https://example.com
 dotnet run --project src/McpMySite.Indexer -- build
-dotnet run --project src/McpMySite.Indexer -- search "reset my password"
+dotnet run --project src/McpMySite.Indexer -- search "how can I contact you"
 $env:Index__Path = "index"
 dotnet run --project src/McpMySite.Server
 ```
@@ -56,7 +56,7 @@ claude mcp add --transport http mysite http://localhost:5000/mcp
 
 Other clients (VS Code, Cursor, Claude Desktop) are in
 [Connecting MCP clients](docs/user-guide.md#8-connecting-mcp-clients). Without an agent, open
-`http://localhost:5000/api/search?q=password`; `/healthz` shows the loaded index.
+`http://localhost:5000/api/search?q=contact`; `/healthz` shows the loaded index.
 
 ## Documentation
 
