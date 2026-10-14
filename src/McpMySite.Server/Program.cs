@@ -15,6 +15,9 @@ var searchApiOptions = configuration.GetSection(SearchApiOptions.SectionName).Ge
 var rateLimitOptions = configuration.GetSection(RateLimitOptions.SectionName).Get<RateLimitOptions>() ?? new RateLimitOptions();
 var uiOptions = configuration.GetSection(UiOptions.SectionName).Get<UiOptions>() ?? new UiOptions();
 
+// Registered before the index refresh service so that exporters are running when it writes its first log lines.
+var telemetryExporter = builder.AddSiteTelemetry();
+
 services.AddHttpClient("index", client => client.Timeout = TimeSpan.FromMinutes(2));
 services.AddSingleton<IndexHolder>();
 services.AddSingleton<IndexLoader>();
@@ -65,6 +68,13 @@ services.AddOptions<CorsOptions>().Configure<IOptions<SearchApiOptions>, IOption
 services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, _) =>
+    {
+        ServerDiagnostics.RejectedRequests.Add(1, new TagList { { "reason", "rate_limit" } });
+        context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(RequestLogCategory)
+            .LogWarning("Rate limit exceeded: {Method} {Path} answered 429", context.HttpContext.Request.Method, context.HttpContext.Request.Path);
+        return ValueTask.CompletedTask;
+    };
     options.AddPolicy(SearchEndpoints.RateLimitPolicy, context =>
     {
         var permit = context.RequestServices.GetRequiredService<IOptions<RateLimitOptions>>().Value.PermitPerMinute;
@@ -89,31 +99,24 @@ if (rateLimitOptions.UseForwardedHeaders)
     });
 }
 
-// Telemetry: OpenTelemetry everywhere; Application Insights when its connection string is present,
-// otherwise OTLP when an endpoint is configured.
-var telemetry = services.AddOpenTelemetry()
-    .ConfigureResource(resource => resource.AddService(mcpOptions.ServerName))
-    .WithTracing(tracing => tracing
-        .AddSource(SiteSearchService.ActivitySourceName)
-        .AddAspNetCoreInstrumentation(o => o.Filter = context => !context.Request.Path.StartsWithSegments("/healthz"))
-        .AddHttpClientInstrumentation())
-    .WithMetrics(metrics => metrics
-        .AddMeter(SiteSearchService.MeterName)
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddRuntimeInstrumentation());
+// One line per request: method, path, status and duration. The query string carries search text, so it is only
+// included with Telemetry:LogQueryText. The level of Microsoft.AspNetCore.HttpLogging turns these lines on or off.
+services.AddHttpLogging(_ => { });
+services.AddOptions<HttpLoggingOptions>().Configure<IOptions<TelemetryOptions>>((options, telemetryOptions) =>
+{
+    options.LoggingFields = HttpLoggingFields.RequestMethod | HttpLoggingFields.RequestPath | HttpLoggingFields.ResponseStatusCode | HttpLoggingFields.Duration;
+    if (telemetryOptions.Value.LogQueryText)
+    {
+        options.LoggingFields |= HttpLoggingFields.RequestQuery;
+    }
 
-var applicationInsights = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
-if (!string.IsNullOrWhiteSpace(applicationInsights))
-{
-    telemetry.UseAzureMonitor(o => o.ConnectionString = applicationInsights);
-}
-else if (!string.IsNullOrWhiteSpace(configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
-{
-    telemetry.UseOtlpExporter();
-}
+    options.CombineLogs = true;
+});
 
 var app = builder.Build();
+app.FlushTelemetryOnShutdown();
+
+app.UseHttpLogging();
 
 if (rateLimitOptions.UseForwardedHeaders)
 {
@@ -139,6 +142,10 @@ app.UseWhen(context => context.Request.Path.StartsWithSegments(mcpOptions.Path),
 
     if (!CryptographicEquals(supplied, expected))
     {
+        ServerDiagnostics.RejectedRequests.Add(1, new TagList { { "reason", "api_key" } });
+        context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(RequestLogCategory).LogWarning(
+            "Rejected {Method} {Path}: {Problem} API key",
+            context.Request.Method, context.Request.Path, string.IsNullOrEmpty(supplied) ? "missing" : "invalid");
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.Headers.WWWAuthenticate = "Bearer";
         await context.Response.WriteAsJsonAsync(new { error = "A valid API key is required." });
@@ -174,7 +181,7 @@ app.MapGet("/healthz", (IndexHolder holder) =>
         lastError = holder.LastError,
     };
     return manifest is null ? Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable) : Results.Ok(body);
-}).ExcludeFromDescription();
+}).ExcludeFromDescription().WithHttpLogging(HttpLoggingFields.None);
 
 // With the pages on, / is the landing page; without them it stays a short text summary.
 if (!uiOptions.Enabled)
@@ -186,6 +193,31 @@ if (!uiOptions.Enabled)
         return Results.Text($"mcp-my-site for {name}\nMCP endpoint: {mcpOptions.Path}\nSearch API: {(searchApiOptions.Enabled ? searchApiOptions.Path + "?q=..." : "disabled")}\n");
     }).ExcludeFromDescription();
 }
+
+// What this instance serves and where its telemetry goes, so a log alone shows how the server was configured.
+// Written once the host has started: the Azure Monitor exporter drops records written before that.
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(StartupLogCategory);
+    var embeddingOptions = app.Services.GetRequiredService<IOptions<EmbeddingOptions>>().Value;
+    startupLogger.LogInformation(
+        "mcp-my-site {Version} ({Environment}): MCP at {McpPath} (API key {ApiKey}), search API {SearchApi}, pages {Pages}, embeddings at {EmbeddingEndpoint}, telemetry export {Exporter}, query text logging {LogQueryText}",
+        typeof(Program).Assembly.GetName().Version?.ToString(3),
+        app.Environment.EnvironmentName,
+        mcpOptions.Path,
+        string.IsNullOrWhiteSpace(app.Services.GetRequiredService<IOptions<McpOptions>>().Value.ApiKey) ? "off" : "required",
+        searchApiOptions.Enabled ? searchApiOptions.Path : "off",
+        uiOptions.Enabled ? "on" : "off",
+        embeddingOptions.Endpoint,
+        telemetryExporter,
+        app.Services.GetRequiredService<IOptions<TelemetryOptions>>().Value.LogQueryText ? "on" : "off");
+    if (string.IsNullOrWhiteSpace(embeddingOptions.ResolveApiKey()))
+    {
+        startupLogger.LogWarning(
+            "No embedding API key: set the {Variable} environment variable. Until then every search is keyword-only.",
+            embeddingOptions.ApiKeyEnvironmentVariable);
+    }
+});
 
 app.Run();
 
@@ -204,4 +236,6 @@ static bool CryptographicEquals(string? a, string b)
 public partial class Program
 {
     private const string McpCorsPolicy = "mcp";
+    private const string RequestLogCategory = "McpMySite.Server.Requests";
+    private const string StartupLogCategory = "McpMySite.Server.Startup";
 }

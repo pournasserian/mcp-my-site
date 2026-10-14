@@ -82,6 +82,12 @@ public sealed class TelemetryOptions
 {
     public const string SectionName = "Telemetry";
 
-    /// <summary>Include the query text in logs and traces. Off by default because queries can contain personal data.</summary>
+    /// <summary>Where traces, metrics and logs are exported on top of the console log.</summary>
+    public TelemetryExporter Exporter { get; set; } = TelemetryExporter.Auto;
+
+    /// <summary>
+    /// Include the query text, and fetch targets that match no page, in logs and traces. Off by default because
+    /// queries can contain personal data.
+    /// </summary>
     public bool LogQueryText { get; set; }
 }

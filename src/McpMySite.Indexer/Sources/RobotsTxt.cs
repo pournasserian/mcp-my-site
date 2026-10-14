@@ -13,6 +13,9 @@ public sealed class RobotsTxt
 
     public IReadOnlyList<string> Sitemaps { get; }
 
+    /// <summary>Allow and Disallow rules that apply to this crawler.</summary>
+    public int RuleCount => _rules.Count;
+
     public static RobotsTxt Empty { get; } = new([], []);
 
     public static RobotsTxt Parse(string content, string userAgentToken)

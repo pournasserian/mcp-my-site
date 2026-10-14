@@ -59,13 +59,17 @@ public sealed partial class CrawlSource : ISiteSource
         if (_config.UseSitemap)
         {
             var sitemapUrls = robots.Sitemaps.Count > 0 ? robots.Sitemaps : [new Uri(_siteUrl, "/sitemap.xml").ToString()];
-            var entries = await new SitemapReader(_http).ReadAsync(sitemapUrls, cancellationToken);
+            var entries = await new SitemapReader(_http, _logger).ReadAsync(sitemapUrls, cancellationToken);
             seeds.AddRange(entries.Select(e => (e.Url, e.LastModified)));
             _logger.LogInformation("Sitemap listed {Count} URLs", entries.Count);
         }
+        else
+        {
+            _logger.LogInformation("Crawl:UseSitemap is off; following links from {Url}", _siteUrl);
+        }
 
         var followLinks = _config.AlwaysFollowLinks || seeds.Count == 0;
-        if (seeds.Count == 0)
+        if (seeds.Count == 0 && _config.UseSitemap)
         {
             _logger.LogInformation("No sitemap entries; following links from {Url}", _siteUrl);
         }
@@ -108,6 +112,17 @@ public sealed partial class CrawlSource : ISiteSource
                     {
                         if (inFlight.Count == 0)
                         {
+                            int left;
+                            lock (_lock)
+                            {
+                                left = pending.Count;
+                            }
+
+                            if (left > 0)
+                            {
+                                _logger.LogInformation("Reached Crawl:MaxPages ({MaxPages}); {Left} known URLs were not fetched", _config.MaxPages, left);
+                            }
+
                             break;
                         }
 
@@ -130,6 +145,7 @@ public sealed partial class CrawlSource : ISiteSource
                             DisallowedCount++;
                         }
 
+                        _logger.LogDebug("Skipping {Url}: disallowed by robots.txt", url);
                         continue;
                     }
 
@@ -195,6 +211,9 @@ public sealed partial class CrawlSource : ISiteSource
         }
 
         await producer;
+        _logger.LogInformation(
+            "Crawl finished: {Accepted} pages fetched, {Disallowed} skipped by robots.txt or X-Robots-Tag, {Errors} failed",
+            accepted, DisallowedCount, Errors.Count);
     }
 
     private async Task<RobotsTxt> LoadRobotsAsync(CancellationToken cancellationToken)
@@ -205,10 +224,13 @@ public sealed partial class CrawlSource : ISiteSource
             using var response = await _http.GetAsync(url, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
+                _logger.LogInformation("No robots.txt at {Url} ({Status}); every page is allowed", url, (int)response.StatusCode);
                 return RobotsTxt.Empty;
             }
 
-            return RobotsTxt.Parse(await response.Content.ReadAsStringAsync(cancellationToken), UserAgentToken);
+            var robots = RobotsTxt.Parse(await response.Content.ReadAsStringAsync(cancellationToken), UserAgentToken);
+            _logger.LogInformation("Read robots.txt: {Rules} rules for this crawler, {Sitemaps} sitemaps", robots.RuleCount, robots.Sitemaps.Count);
+            return robots;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
@@ -264,6 +286,7 @@ public sealed partial class CrawlSource : ISiteSource
         var mediaType = response.Content.Headers.ContentType?.MediaType;
         if (mediaType is not null && !mediaType.Contains("html", StringComparison.OrdinalIgnoreCase) && !mediaType.Contains("xhtml", StringComparison.OrdinalIgnoreCase))
         {
+            _logger.LogDebug("Skipping {Url}: {MediaType} is not HTML", url, mediaType);
             return null;
         }
 
@@ -274,12 +297,14 @@ public sealed partial class CrawlSource : ISiteSource
                 DisallowedCount++;
             }
 
+            _logger.LogDebug("Skipping {Url}: X-Robots-Tag noindex", url);
             return null;
         }
 
         var finalUrl = response.RequestMessage?.RequestUri?.ToString() ?? url;
         if (!TryNormalize(finalUrl, out var normalizedFinal))
         {
+            _logger.LogDebug("Skipping {Url}: redirected to {FinalUrl}, outside the crawl", url, finalUrl);
             return null;
         }
 
@@ -312,6 +337,7 @@ public sealed partial class CrawlSource : ISiteSource
 
         var html = encoding.GetString(limited.ToArray());
         var modified = lastModified ?? response.Content.Headers.LastModified;
+        _logger.LogDebug("Fetched {Url} ({Status}, {Bytes} bytes)", normalizedFinal, (int)response.StatusCode, limited.Length);
         return new RawPage(normalizedFinal, html, modified);
     }
 

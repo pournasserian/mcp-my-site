@@ -3,6 +3,12 @@ namespace McpMySite.Core.Embeddings;
 public static class EmbeddingGeneratorFactory
 {
     /// <summary>
+    /// ActivitySource and Meter of the generators built here: Microsoft.Extensions.AI's default, which follows the
+    /// OpenTelemetry GenAI conventions (model, token usage, duration). Prompts are never recorded.
+    /// </summary>
+    public const string TelemetrySourceName = "Experimental.Microsoft.Extensions.AI";
+
+    /// <summary>
     /// Builds an <see cref="IEmbeddingGenerator{TInput,TEmbedding}"/> for an OpenAI-compatible endpoint.
     /// <paramref name="model"/> and <paramref name="dimensions"/> override the options; the server passes the
     /// values recorded in the index manifest so queries are embedded exactly like the content was.
@@ -29,6 +35,7 @@ public static class EmbeddingGeneratorFactory
             .AsIEmbeddingGenerator(dims)
             .AsBuilder()
             .ConfigureOptions(o => o.Dimensions ??= dims)
+            .UseOpenTelemetry(sourceName: TelemetrySourceName)
             .Build();
     }
 }

@@ -7,7 +7,7 @@ namespace McpMySite.Server.Pages;
 /// /llms.txt in the llmstxt.org format: the site's pages as a Markdown list for language models, grouped by section,
 /// with how to reach this server. Built once per loaded index and base URL, since it reads every page.
 /// </summary>
-public sealed class LlmsTxt(IndexHolder holder)
+public sealed class LlmsTxt(IndexHolder holder, ILogger<LlmsTxt> logger)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private (DateTimeOffset BuiltAt, string BaseUrl, string Text)? _cached;
@@ -29,6 +29,7 @@ public sealed class LlmsTxt(IndexHolder holder)
                 return cached.Text;
             }
 
+            var stopwatch = Stopwatch.StartNew();
             var pages = new List<PageDocument>();
             foreach (var (url, _) in store.ListPages())
             {
@@ -40,6 +41,7 @@ public sealed class LlmsTxt(IndexHolder holder)
 
             var text = Build(info, pages);
             _cached = (store.Manifest.BuiltAt, baseUrl, text);
+            logger.LogInformation("Built llms.txt for {BaseUrl}: {Pages} pages, {Chars} characters in {ElapsedMs:F0} ms", baseUrl, pages.Count, text.Length, stopwatch.Elapsed.TotalMilliseconds);
             return text;
         }
         finally

@@ -1,9 +1,10 @@
 namespace McpMySite.Indexer.Sources;
 
 /// <summary>Reads built HTML from a local folder and maps file paths to URLs under the site base URL.</summary>
-public sealed class FolderSource(string folder, Uri siteUrl, FolderUrlStyle urlStyle, GlobMatcher filter, int maxPages) : ISiteSource
+public sealed class FolderSource(string folder, Uri siteUrl, FolderUrlStyle urlStyle, GlobMatcher filter, int maxPages, ILogger? logger = null) : ISiteSource
 {
     private readonly List<SourceError> _errors = [];
+    private readonly ILogger _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
     public IReadOnlyList<SourceError> Errors => _errors;
 
@@ -19,18 +20,21 @@ public sealed class FolderSource(string folder, Uri siteUrl, FolderUrlStyle urlS
             .Where(f => f.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
             .OrderBy(f => f, StringComparer.Ordinal);
 
+        _logger.LogInformation("Reading HTML files from {Folder}", root);
         var count = 0;
         foreach (var file in files)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (count >= maxPages)
             {
+                _logger.LogInformation("Reached Crawl:MaxPages ({MaxPages}); the remaining files were not read", maxPages);
                 break;
             }
 
             var url = ToUrl(root, file);
             if (!filter.IsAllowed(new Uri(url).AbsolutePath))
             {
+                _logger.LogDebug("Skipping {File}: {Url} is excluded by Crawl:Include or Crawl:Exclude", file, url);
                 continue;
             }
 
@@ -42,12 +46,16 @@ public sealed class FolderSource(string folder, Uri siteUrl, FolderUrlStyle urlS
             catch (IOException ex)
             {
                 _errors.Add(new SourceError(url, ex.Message));
+                _logger.LogWarning("Failed to read {File}: {Message}", file, ex.Message);
                 continue;
             }
 
             count++;
+            _logger.LogDebug("Read {File} as {Url} ({Chars} characters)", file, url, html.Length);
             yield return new RawPage(url, html, File.GetLastWriteTimeUtc(file));
         }
+
+        _logger.LogInformation("Read {Count} pages from {Folder}, {Errors} failed", count, root, _errors.Count);
     }
 
     internal string ToUrl(string root, string file)
