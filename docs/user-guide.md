@@ -135,13 +135,18 @@ The image listens on port 8080 and runs as a non-root user.
 
 ## 4. Quick start
 
-Five steps from nothing to an MCP server answering questions about your site.
+Five steps from nothing to an MCP server answering questions about your site. Run them from the root
+of a clone (section 3.1). The commands are the same on every OS; only setting environment variables
+differs, so pick the block for your shell. Step 5 needs an absolute index path because `dotnet run`
+starts the server in its project folder.
+
+### 4.1 macOS and Linux (bash, zsh)
 
 ```bash
 # 1. Make a config file for your site (writes appsettings.json in the current folder)
 mcpmysite init https://example.com
 
-# 2. Put your embeddings key in the environment (see section 5 for each OS)
+# 2. Put your embeddings key in the environment (see section 5.2)
 export OPENROUTER_API_KEY=sk-or-...
 
 # 3. Build the index into ./index
@@ -150,9 +155,79 @@ mcpmysite build
 # 4. Try a few queries without starting anything
 mcpmysite search "how do I reset my password"
 
-# 5. Serve it (absolute path: dotnet run starts the server in its project folder)
+# 5. Serve it
 Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
 ```
+
+### 4.2 Windows PowerShell
+
+```powershell
+# 1. Make a config file for your site
+mcpmysite init https://example.com
+
+# 2. Put your embeddings key in the environment (see section 5.2)
+$env:OPENROUTER_API_KEY = "sk-or-..."
+
+# 3. Build the index into .\index
+mcpmysite build
+
+# 4. Try a few queries without starting anything
+mcpmysite search "how do I reset my password"
+
+# 5. Serve it
+$env:Index__Path = "$PWD\index"
+dotnet run --project src/McpMySite.Server
+```
+
+### 4.3 Windows Command Prompt (cmd)
+
+`set` takes the value without quotes; quotes would become part of the value.
+
+```bat
+rem 1. Make a config file for your site
+mcpmysite init https://example.com
+
+rem 2. Put your embeddings key in the environment (see section 5.2)
+set OPENROUTER_API_KEY=sk-or-...
+
+rem 3. Build the index into .\index
+mcpmysite build
+
+rem 4. Try a few queries without starting anything
+mcpmysite search "how do I reset my password"
+
+rem 5. Serve it
+set Index__Path=%CD%\index
+dotnet run --project src/McpMySite.Server
+```
+
+Variables set with `set` or `$env:` last for the current window only. Section 5.2 shows how to keep
+the key for new terminals.
+
+### 4.4 Docker
+
+With only Git and Docker on the host, run the indexer in the .NET SDK image and the server in its own
+image (section 3.4). Set `OPENROUTER_API_KEY` in your shell as above; `-e OPENROUTER_API_KEY` without a
+value passes it through to the container.
+
+```bash
+# 1 and 3. Make the config and build the index into ./index
+docker run --rm -v "${PWD}:/src" -w /src -e OPENROUTER_API_KEY mcr.microsoft.com/dotnet/sdk:10.0 sh -c "dotnet run --project src/McpMySite.Indexer -- init https://example.com && dotnet run --project src/McpMySite.Indexer -- build"
+
+# 5. Build the server image and serve the index from a read-only mount
+docker build -f src/McpMySite.Server/Dockerfile -t mcp-my-site .
+docker run --rm -p 8080:8080 -v "${PWD}/index:/index:ro" -e Index__Path=/index -e OPENROUTER_API_KEY mcp-my-site
+```
+
+The commands work as written in bash, zsh and PowerShell; in `cmd`, write `%CD%` instead of `${PWD}`.
+If .NET is installed on the host, build the index there (4.1 to 4.3) and use only the last two
+commands. On Linux the SDK container leaves root-owned `bin` and `obj` folders in the clone; add
+`--user "$(id -u):$(id -g)" -e HOME=/tmp` to the first command to avoid that.
+
+The container listens on port 8080, so use `http://localhost:8080` in place of
+`http://localhost:5000` below.
+
+### 4.5 Try it
 
 The server prints the URL it listens on (by default `http://localhost:5000`). Then:
 
@@ -196,6 +271,14 @@ $env:OPENROUTER_API_KEY = "sk-or-..."
 
 # Windows, persistent for your user (new terminals only)
 [Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "sk-or-...", "User")
+```
+
+```bat
+rem Windows Command Prompt, current session (no quotes around the value)
+set OPENROUTER_API_KEY=sk-or-...
+
+rem Windows, persistent for your user (new terminals only)
+setx OPENROUTER_API_KEY sk-or-...
 ```
 
 In CI, store it as a secret and expose it as an environment variable for the build step (section 10.3).
