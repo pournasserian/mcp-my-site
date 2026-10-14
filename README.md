@@ -31,7 +31,7 @@ cd mcp-my-site
 export AI_API_KEY=sk-...
 dotnet run --project src/McpMySite.Indexer -- init https://example.com
 dotnet run --project src/McpMySite.Indexer -- build
-dotnet run --project src/McpMySite.Indexer -- search "how do I reset my password"
+dotnet run --project src/McpMySite.Indexer -- search "how can I contact you"
 Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
 ```
 
@@ -45,7 +45,7 @@ cd mcp-my-site
 $env:AI_API_KEY = "sk-..."
 dotnet run --project src/McpMySite.Indexer -- init https://example.com
 dotnet run --project src/McpMySite.Indexer -- build
-dotnet run --project src/McpMySite.Indexer -- search "how do I reset my password"
+dotnet run --project src/McpMySite.Indexer -- search "how can I contact you"
 $env:Index__Path = "$PWD\index"
 dotnet run --project src/McpMySite.Server
 ```
@@ -60,7 +60,7 @@ cd mcp-my-site
 set AI_API_KEY=sk-...
 dotnet run --project src/McpMySite.Indexer -- init https://example.com
 dotnet run --project src/McpMySite.Indexer -- build
-dotnet run --project src/McpMySite.Indexer -- search "how do I reset my password"
+dotnet run --project src/McpMySite.Indexer -- search "how can I contact you"
 set Index__Path=%CD%\index
 dotnet run --project src/McpMySite.Server
 ```
@@ -90,7 +90,7 @@ the first command to avoid that.
 ### Next
 
 Connect an MCP client to `http://localhost:5000/mcp` (`8080` with Docker), or open
-`http://localhost:5000/api/search?q=password`. `/healthz` shows the loaded index.
+`http://localhost:5000/api/search?q=contact`. `/healthz` shows the loaded index.
 
 Everything after `--` goes to the indexer CLI. To type `mcpmysite build` instead, install it as a
 .NET tool: `dotnet pack src/McpMySite.Indexer -c Release -o nupkg`, then
