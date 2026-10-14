@@ -21,7 +21,7 @@ export AI_API_KEY=sk-...
 dotnet run --project src/McpMySite.Indexer -- init https://example.com    # writes appsettings.json
 dotnet run --project src/McpMySite.Indexer -- build                       # crawls the site into ./index
 dotnet run --project src/McpMySite.Indexer -- search "reset my password"  # checks the index
-Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
+Index__Path=index dotnet run --project src/McpMySite.Server
 ```
 
 Windows PowerShell:
@@ -33,7 +33,7 @@ $env:AI_API_KEY = "sk-..."
 dotnet run --project src/McpMySite.Indexer -- init https://example.com
 dotnet run --project src/McpMySite.Indexer -- build
 dotnet run --project src/McpMySite.Indexer -- search "reset my password"
-$env:Index__Path = "$PWD\index"
+$env:Index__Path = "index"
 dotnet run --project src/McpMySite.Server
 ```
 

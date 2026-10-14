@@ -4,6 +4,11 @@
     <RootNamespace>McpMySite.Server</RootNamespace>
     <Description>Web app that serves a site index through an MCP server and a search API.</Description>
     <UserSecretsId>mcpmysite-server</UserSecretsId>
+    <!-- The Web SDK makes `dotnet run` start in the project folder, so a relative Index:Path would
+         resolve from src/McpMySite.Server. Start in the caller's folder instead and pin the content
+         root to the project so appsettings.json and wwwroot still come from here. -->
+    <RunWorkingDirectory>$(MSBuildStartupDirectory)</RunWorkingDirectory>
+    <StartArguments>--contentRoot "$(MSBuildProjectDirectory)"</StartArguments>
   </PropertyGroup>
 
   <ItemGroup>
