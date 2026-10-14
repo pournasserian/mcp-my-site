@@ -151,7 +151,7 @@ mcpmysite build
 mcpmysite search "how do I reset my password"
 
 # 5. Serve it
-Index__Path=./index dotnet run --project src/McpMySite.Server
+Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
 ```
 
 The server prints the URL it listens on (by default `http://localhost:5000`). Then:
@@ -538,7 +538,7 @@ a reader would understand out of context: "Writing: MCP servers, AI tooling, IoT
 
 ```bash
 # From source
-Index__Path=./index dotnet run --project src/McpMySite.Server
+Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
 
 # Published
 Index__Path=/srv/index ASPNETCORE_URLS=http://0.0.0.0:8080 dotnet McpMySite.Server.dll

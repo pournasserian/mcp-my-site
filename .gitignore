@@ -431,3 +431,5 @@ FodyWeavers.xsd
 /index/
 /index-*/
 .mcpmysite/
+# indexer config written by `init` when following the quick start from the repo root
+/appsettings.json
