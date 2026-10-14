@@ -76,7 +76,7 @@ flowchart TB
 | Project | Role | Notable packages |
 |---|---|---|
 | `McpMySite.Core` | Everything both apps need: manifest, page and chunk records, `IIndexStore`/`IIndexWriter`, the JSON and SQLite stores, BM25, vector maths, rank fusion, snippets, the embedding generator factory | Microsoft.Extensions.AI (+ .OpenAI), OpenAI, Microsoft.Data.Sqlite |
-| `McpMySite.Indexer` | The `mcpmysite` tool. Owns sources, extraction, chunking, the embedding cache, safety checks and the run report | AngleSharp (HTML), ReverseMarkdown (HTML to Markdown), System.CommandLine, Microsoft.Extensions.Hosting (configuration and logging) |
+| `McpMySite.Indexer` | The `mcpmysite` tool. Owns sources, extraction, chunking, the embedding cache, safety checks and the run report | AngleSharp (HTML), ReverseMarkdown (HTML to Markdown), System.CommandLine, Microsoft.Extensions.Hosting (configuration and logging), OpenTelemetry (+ OTLP and Azure Monitor exporters) |
 | `McpMySite.Server` | Hosts the MCP server and the search API, loads and refreshes the index, rate limits, exports telemetry | ModelContextProtocol.AspNetCore, Microsoft.AspNetCore.OpenApi, Scalar.AspNetCore (API reference page), OpenTelemetry (+ Azure Monitor exporter) |
 | `McpMySite.Tests` | Unit tests, store contract tests, the web app booted in-process | xunit, Microsoft.AspNetCore.Mvc.Testing |
 
@@ -349,7 +349,8 @@ flowchart TB
     Loader["IndexLoader"] --> Holder
     Refresh["IndexRefreshService<br/>BackgroundService, PeriodicTimer"] --> Loader
     Loader --> Src["Index:Path or Index:Url"]
-    SS --> Tel["ActivitySource + Meter<br/>OpenTelemetry export"]
+    SS --> Tel["ServerDiagnostics<br/>ActivitySource + Meter, OpenTelemetry export"]
+    Loader --> Tel
 ```
 
 | Component | Responsibility |
@@ -365,7 +366,8 @@ flowchart TB
 | `LlmsTxt` | Builds `/llms.txt` from every page of the loaded store, grouped by the manifest's sections, and caches it per index build and base URL. |
 | `PlaygroundPage` | The MCP playground: a server-rendered page whose inline script is a minimal Streamable HTTP client (initialize, tools/list, tools/call), with forms generated from input schemas. It writes server data with `textContent` only. |
 | `PageEndpoints`, `LandingPage`, `PageShell` | The landing page as a Razor component rendered on the server through `RazorComponentResult`, plus `robots.txt` and `sitemap.xml`. `PageShell` holds the document head (description, canonical, Open Graph, schema.org) and the inlined styles. |
-| `Program` | Wiring: options, CORS policies bound from options, rate limiter partitioned by IP, API key middleware, telemetry exporters, endpoints. |
+| `ServerDiagnostics`, `TelemetrySetup` | The server's ActivitySource, Meter and instruments; OpenTelemetry registration, the exporter choice and the flush on shutdown. |
+| `Program` | Wiring: options, CORS policies bound from options, rate limiter partitioned by IP, API key middleware, request logging, telemetry, endpoints, the startup summary line. |
 
 ### 5.2 Startup and hot swap
 
@@ -476,10 +478,18 @@ can carry its indexer settings next to the site.
 **Secrets.** Only the embeddings key (and the optional MCP API key) are secret. Both are read from
 configuration or a named environment variable and never written to the index, the report or logs.
 
-**Telemetry.** The server emits an `ActivitySource` and a `Meter`, both named `McpMySite.Server`, and
-tags every search with its channel (`mcp` or `api`) and whether it fell back to keyword search.
-Export is OpenTelemetry: Azure Monitor when its connection string is present, otherwise OTLP when an
-endpoint is configured. Query text is excluded unless explicitly enabled.
+**Telemetry.** The server emits an `ActivitySource` and a `Meter`, both named `McpMySite.Server`
+(`ServerDiagnostics`), and the indexer the same pair named `McpMySite.Indexer` (`IndexerDiagnostics`).
+The server tags every search with its channel (`mcp` or `api`) and whether it fell back to keyword
+search, traces index loads, counts rejected requests and publishes the index age as a gauge; the
+indexer traces a build in its collect, embed and write stages and records the run's page outcomes.
+Both also collect the embedding client's GenAI spans, and the server the MCP SDK's. Logging is
+standard `Microsoft.Extensions.Logging` to the console, formatted by `Logging:Console`. Export is
+OpenTelemetry, chosen by `Telemetry:Exporter` and resolved in Core (`TelemetryExport`) so both programs
+read the same settings the same way: Azure Monitor when its connection string is present, otherwise
+OTLP when an endpoint is configured, unless set explicitly. Both flush exporters before their
+container is disposed, because the exporters' HTTP clients come from it. Query text is excluded unless
+explicitly enabled.
 
 **Error philosophy.** Build time fails closed: any doubt about the crawl stops the publish. Query
 time fails open: a missing embedding degrades to keyword search rather than an error, and a bad new
@@ -545,6 +555,7 @@ src/
     Search/                        Tokenizer, Bm25Index, VectorMath, HybridRanker, Snippets
     Stores/                        IIndexStore, IIndexWriter, IndexStoreOpener, UrlKey, Json/, Sqlite/
     Embeddings/                    EmbeddingOptions, EmbeddingGeneratorFactory
+    Telemetry/                     TelemetryExport (exporter choice shared by both apps)
   McpMySite.Indexer/
     Program.cs                     CLI (build, init, search)
     Configuration/                 IndexerConfig, IndexerConfigLoader, GlobMatcher
@@ -553,17 +564,19 @@ src/
     Chunking/                      MarkdownChunker
     Embeddings/                    EmbeddingCache, BatchEmbedder
     Build/                         IndexBuilder, SiteOutline, BuildReport
+    Telemetry/                     IndexerDiagnostics, IndexerTelemetry (logging and export setup)
     appsettings.defaults.json      every setting and its default, shipped with the tool
   McpMySite.Server/
     Program.cs                     pipeline and endpoint wiring
     Options/                       strongly typed settings
     Index/                         IndexHolder, IndexLoader, IndexRefreshService
-    Search/                        SiteSearchService (+ telemetry)
+    Search/                        SiteSearchService
+    Telemetry/                     ServerDiagnostics, TelemetrySetup
     Mcp/                           SiteTools
     Api/                           SearchEndpoints
     appsettings.json, Dockerfile
 tests/
-  McpMySite.Tests/                 Core/, Indexer/, Server/, TestIndex (fixture builder)
+  McpMySite.Tests/                 Core/, Indexer/, Server/, TestIndex (fixture builder), CapturedLogs, FakeCollector
 docs/
   user-guide.md, architecture.md
 ```

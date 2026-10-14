@@ -9,8 +9,10 @@ using System.Reflection;
 namespace McpMySite.Indexer.Build;
 
 /// <summary>Runs one full rebuild: read pages, extract, chunk, embed, check, write.</summary>
-public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
+public sealed class IndexBuilder(ILoggerFactory loggerFactory)
 {
+    private readonly ILogger _logger = loggerFactory.CreateLogger<IndexBuilder>();
+
     public sealed class BuildFailedException(string message) : Exception(message);
 
     public async Task<BuildReport> RunAsync(IndexerConfig config, string baseDirectory, CancellationToken cancellationToken)
@@ -19,7 +21,18 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
         var siteUri = new Uri(config.Site.Url);
         var outputDirectory = Path.GetFullPath(Path.Combine(baseDirectory, config.Output.Directory));
         var report = new BuildReport { SiteUrl = siteUri.ToString(), Store = config.Output.Store };
+        var source = config.Source.Type.ToString().ToLowerInvariant();
         var stopwatch = Stopwatch.StartNew();
+
+        using var activity = IndexerDiagnostics.ActivitySource.StartActivity("mcpmysite.build");
+        activity?.SetTag("mcpmysite.site", siteUri.ToString());
+        activity?.SetTag("mcpmysite.source", source);
+        activity?.SetTag("mcpmysite.store", config.Output.Store);
+
+        _logger.LogInformation(
+            "Building a {Store} index of {Site} from {Source} into {Directory}: up to {MaxPages} pages, embeddings {Model} ({Dimensions} dimensions) at {Endpoint}, cache {Cache}",
+            config.Output.Store, siteUri, config.Source.Type == SourceType.Folder ? config.Source.Folder : "a crawl", outputDirectory, config.Crawl.MaxPages,
+            config.Embeddings.Model, config.Embeddings.Dimensions, config.Embeddings.Endpoint, config.Cache.Enabled ? config.Cache.Path : "off");
 
         try
         {
@@ -29,17 +42,38 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
             var previous = await ReadPreviousManifestAsync(outputDirectory, cancellationToken);
             report.PreviousPageCount = previous?.PageCount ?? 0;
 
-            var (pages, chunks, embeddingTexts, siteName) = await CollectAsync(config, siteUri, baseDirectory, report, cancellationToken);
+            List<PageDocument> pages;
+            List<ChunkRecord> chunks;
+            List<string> embeddingTexts;
+            string? siteName;
+            using (var collect = IndexerDiagnostics.ActivitySource.StartActivity("mcpmysite.build.collect"))
+            {
+                (pages, chunks, embeddingTexts, siteName) = await CollectAsync(config, siteUri, baseDirectory, report, cancellationToken);
+                collect?.SetTag("mcpmysite.pages", pages.Count);
+                collect?.SetTag("mcpmysite.chunks", chunks.Count);
+            }
+
             report.PagesIndexed = pages.Count;
             report.Chunks = chunks.Count;
+            _logger.LogInformation(
+                "Collected {Pages} pages and {Chunks} chunks from {Fetched} fetched (noindex {NoIndex}, duplicates {Duplicates}, empty {Empty}, errors {Errors})",
+                pages.Count, chunks.Count, report.PagesFetched, report.PagesSkippedNoIndex, report.PagesSkippedDuplicate, report.PagesSkippedEmpty, report.Errors.Count);
 
             CheckSafety(config.Safety, report, pages.Count);
 
-            using var cache = config.Cache.Enabled ? new EmbeddingCache(Path.GetFullPath(Path.Combine(baseDirectory, config.Cache.Path))) : null;
-            var embedder = new BatchEmbedder(generator, cache, config.Embeddings.Model, config.Embeddings.Dimensions, config.Embeddings.BatchSize, logger);
-            var vectors = await embedder.EmbedAsync(embeddingTexts, cancellationToken);
-            report.EmbeddingsGenerated = embedder.Embedded;
-            report.EmbeddingsFromCache = embedder.CacheHits;
+            float[] vectors;
+            using (var embed = IndexerDiagnostics.ActivitySource.StartActivity("mcpmysite.build.embed"))
+            {
+                var cachePath = Path.GetFullPath(Path.Combine(baseDirectory, config.Cache.Path));
+                using var cache = config.Cache.Enabled ? new EmbeddingCache(cachePath) : null;
+                _logger.LogDebug("Embedding cache {Cache}", cache is null ? "off" : cachePath);
+                var embedder = new BatchEmbedder(generator, cache, config.Embeddings.Model, config.Embeddings.Dimensions, config.Embeddings.BatchSize, loggerFactory.CreateLogger<BatchEmbedder>());
+                vectors = await embedder.EmbedAsync(embeddingTexts, cancellationToken);
+                report.EmbeddingsGenerated = embedder.Embedded;
+                report.EmbeddingsFromCache = embedder.CacheHits;
+                embed?.SetTag("mcpmysite.embeddings.generated", embedder.Embedded);
+                embed?.SetTag("mcpmysite.embeddings.cached", embedder.CacheHits);
+            }
 
             var builtAt = DateTimeOffset.UtcNow;
             var resolvedSiteName = config.Site.Name ?? siteName ?? siteUri.Host;
@@ -64,14 +98,18 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
 
             if (manifest.Instructions.Length > SiteOutline.MaxChars)
             {
-                logger.LogWarning(
+                _logger.LogWarning(
                     "The server instructions are {Length} characters, over {Max}; some MCP clients cut longer text. Shorten Instructions:Preamble.",
                     manifest.Instructions.Length, SiteOutline.MaxChars);
             }
 
-            var writer = IndexStoreOpener.CreateWriter(config.Output.Store);
-            await writer.WriteAsync(outputDirectory, manifest, pages, chunks, vectors, cancellationToken);
-            logger.LogInformation("Wrote {Store} index with {Pages} pages and {Chunks} chunks to {Directory}", config.Output.Store, pages.Count, chunks.Count, outputDirectory);
+            using (IndexerDiagnostics.ActivitySource.StartActivity("mcpmysite.build.write"))
+            {
+                var writer = IndexStoreOpener.CreateWriter(config.Output.Store);
+                await writer.WriteAsync(outputDirectory, manifest, pages, chunks, vectors, cancellationToken);
+            }
+
+            _logger.LogInformation("Wrote {Store} index with {Pages} pages and {Chunks} chunks to {Directory}", config.Output.Store, pages.Count, chunks.Count, outputDirectory);
 
             report.Succeeded = true;
         }
@@ -79,14 +117,26 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
         {
             report.Succeeded = false;
             report.FailureReason = ex.Message;
-            logger.LogError("Build failed: {Message}", ex.Message);
+            activity?.AddException(ex);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+
+            // The message says what went wrong; the stack trace, which for provider errors runs to pages of
+            // nested retries, is for --verbose and the exported trace.
+            _logger.LogError("Build failed: {Message}", ex.Message);
+            if (ex is not BuildFailedException)
+            {
+                _logger.LogDebug(ex, "Build failure details");
+            }
         }
         finally
         {
             report.FinishedAt = DateTimeOffset.UtcNow;
             Directory.CreateDirectory(outputDirectory);
             await report.SaveAsync(Path.Combine(outputDirectory, IndexFormat.ReportFileName), CancellationToken.None);
-            logger.LogInformation("Finished in {Elapsed:F1}s", stopwatch.Elapsed.TotalSeconds);
+            activity?.SetTag("mcpmysite.succeeded", report.Succeeded);
+            activity?.SetTag("mcpmysite.pages", report.PagesIndexed);
+            IndexerDiagnostics.RecordBuild(report, source, stopwatch.Elapsed);
+            _logger.LogInformation("Finished in {Elapsed:F1}s", stopwatch.Elapsed.TotalSeconds);
         }
 
         return report;
@@ -99,8 +149,8 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
         using var http = CreateHttpClient(config.Crawl);
         ISiteSource source = config.Source.Type switch
         {
-            SourceType.Folder => new FolderSource(Path.GetFullPath(Path.Combine(baseDirectory, config.Source.Folder!)), siteUri, config.Source.FolderUrlStyle, filter, config.Crawl.MaxPages),
-            _ => new CrawlSource(http, config.Crawl, siteUri, filter, logger),
+            SourceType.Folder => new FolderSource(Path.GetFullPath(Path.Combine(baseDirectory, config.Source.Folder!)), siteUri, config.Source.FolderUrlStyle, filter, config.Crawl.MaxPages, loggerFactory.CreateLogger<FolderSource>()),
+            _ => new CrawlSource(http, config.Crawl, siteUri, filter, loggerFactory.CreateLogger<CrawlSource>()),
         };
 
         var extractor = new HtmlExtractor();
@@ -123,6 +173,7 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 report.Errors.Add($"{raw.Url}: extraction failed: {ex.Message}");
+                _logger.LogWarning(ex, "Could not extract {Url}: {Message}", raw.Url, ex.Message);
                 continue;
             }
 
@@ -131,18 +182,21 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
             if (extracted.NoIndex)
             {
                 report.PagesSkippedNoIndex++;
+                _logger.LogDebug("Skipping {Url}: the page asks not to be indexed", extracted.Url);
                 continue;
             }
 
             if (!seen.Add(UrlKey.Normalize(extracted.Url)))
             {
                 report.PagesSkippedDuplicate++;
+                _logger.LogDebug("Skipping {Url}: same page as one already indexed (from {Fetched})", extracted.Url, raw.Url);
                 continue;
             }
 
             if (extracted.TextLength == 0)
             {
                 report.PagesSkippedEmpty++;
+                _logger.LogDebug("Skipping {Url}: no text found", extracted.Url);
                 continue;
             }
 
@@ -150,6 +204,7 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
             if (extracted.TextLength < config.Safety.LowTextChars)
             {
                 report.LowTextPages.Add(new BuildReport.LowTextPage(extracted.Url, extracted.TextLength, extracted.ContentSource));
+                _logger.LogDebug("{Url} has only {Chars} characters of text (from {Source}); it is listed in the report", extracted.Url, extracted.TextLength, extracted.ContentSource);
             }
 
             var page = new PageDocument
@@ -184,7 +239,7 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
                 embeddingTexts.Add(ChunkRecord.BuildEmbeddingText(page.Title, path, chunk.Text));
             }
 
-            logger.LogInformation("Indexed {Url} ({Chunks} chunks, {Chars} chars, {Source})", page.Url, ordinal, extracted.TextLength, extracted.ContentSource);
+            _logger.LogInformation("Indexed {Url} ({Chunks} chunks, {Chars} chars, {Source})", page.Url, ordinal, extracted.TextLength, extracted.ContentSource);
         }
 
         report.Errors.AddRange(source.Errors.Select(e => $"{e.Url}: {e.Message}"));
@@ -233,7 +288,7 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
         }
     }
 
-    private static async Task<IndexManifest?> ReadPreviousManifestAsync(string outputDirectory, CancellationToken cancellationToken)
+    private async Task<IndexManifest?> ReadPreviousManifestAsync(string outputDirectory, CancellationToken cancellationToken)
     {
         try
         {
@@ -243,6 +298,7 @@ public sealed class IndexBuilder(ILogger<IndexBuilder> logger)
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException)
         {
+            _logger.LogWarning("Could not read the previous manifest in {Directory}, so the page-drop check is skipped: {Message}", outputDirectory, ex.Message);
             return null;
         }
     }

@@ -449,7 +449,9 @@ which is why their shipped defaults are empty.
 | `Safety:MaxErrorPercent` | int | `20` | Fail when more than this share of fetches errored. |
 | `Safety:LowTextChars` | int | `200` | Pages with less extracted text are listed in `report.json`. |
 | `Instructions:Preamble` | string | | Text placed before the generated site outline in the MCP server instructions. |
-| `Logging:LogLevel:*` | | `Information` | Standard .NET logging levels, for example `"Logging": { "LogLevel": { "Default": "Debug" } }`. |
+| `Telemetry:Exporter` | `Auto`, `None`, `AzureMonitor` or `Otlp` | `Auto` | Where a build's traces, metrics and logs go on top of the console (section 7.10). `Auto` uses `APPLICATIONINSIGHTS_CONNECTION_STRING` or `OTEL_EXPORTER_OTLP_ENDPOINT` when either is set. |
+| `Logging:LogLevel:*` | | `Information` | Standard .NET logging levels, for example `"Logging": { "LogLevel": { "Default": "Debug" } }`. `--verbose` sets `Default` to `Debug`. |
+| `Logging:Console:FormatterName` | `simple`, `json` or `systemd` | `simple` | Console log format. `json` writes one JSON object per line. `Logging:Console:FormatterOptions:*` sets the timestamp format and the rest (section 7.10). |
 
 #### Path globs
 
@@ -689,11 +691,14 @@ variables win over the file. All settings are read at startup; restart after cha
 | `Ui:StaleAfterDays` | `30` | The landing page and `/api/info` flag the index as stale when it is older than this. `0` turns the flag off. |
 | `RateLimiting:PermitPerMinute` | `60` | Requests per client IP per minute, shared across the MCP endpoint and the search API. Excess requests get `429`. |
 | `RateLimiting:UseForwardedHeaders` | `true` | Take the client IP from `X-Forwarded-For`, as set by Azure App Service and most reverse proxies. Set `false` when clients reach Kestrel directly. |
-| `Telemetry:LogQueryText` | `false` | Include query text in logs and trace tags. Off by default because queries can carry personal data. |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | | When set, traces, metrics and logs go to Application Insights. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | | When set (and no Application Insights string), everything goes to that OTLP collector. |
+| `Telemetry:Exporter` | `Auto` | Where traces, metrics and logs are exported on top of the console log: `Auto` (Application Insights when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, otherwise OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, otherwise nowhere), `None`, `AzureMonitor` or `Otlp`. Section 7.10. |
+| `Telemetry:LogQueryText` | `false` | Include query text, request query strings, and fetch targets that match no page in logs and trace tags. Off by default because queries can carry personal data. |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | | Application Insights connection string. App Service sets it when you turn Application Insights on. |
+| `AzureMonitor:*` | | Application Insights exporter options, such as `SamplingRatio`, `TracesPerSecond` and `EnableLiveMetrics` (section 7.10). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | | OTLP collector address. The other standard `OTEL_*` settings (protocol, headers, service name) apply too. |
 | `ASPNETCORE_URLS` | `http://localhost:5000` | Listening address, standard ASP.NET Core. The container sets port 8080. |
-| `Logging:LogLevel:*` | `Information` | Standard .NET logging configuration. |
+| `Logging:LogLevel:*` | `Information` | Standard .NET logging levels per category (section 7.10). |
+| `Logging:Console:FormatterName` | `simple` | Console log format: `simple` (one line per record), `json` or `systemd`. `Logging:Console:FormatterOptions:*` sets the timestamp format, UTC and scopes. |
 
 ### 7.3 Index source, polling and hot swap
 
@@ -891,24 +896,114 @@ The key stays in the page and is not stored. The playground always calls the end
 origin, so it needs no CORS settings. It needs JavaScript; the server home page covers clients for
 anyone without it.
 
-### 7.10 Telemetry
+### 7.10 Logging and telemetry
 
-The server is instrumented with OpenTelemetry (incoming requests, outgoing HTTP calls, runtime
-metrics) plus its own signals:
+The server and the indexer always log to the console. Both can also export traces, metrics and the
+same logs over OpenTelemetry, and `Telemetry:Exporter` picks where:
+
+| `Telemetry:Exporter` | Sends to | Needs |
+|---|---|---|
+| `Auto` (default) | Application Insights when its connection string is set, otherwise an OTLP collector when an endpoint is set, otherwise nowhere | |
+| `None` | Nowhere; console only | |
+| `AzureMonitor` | Application Insights | `APPLICATIONINSIGHTS_CONNECTION_STRING`. The program refuses to start without it |
+| `Otlp` | Any OpenTelemetry collector: Grafana, Honeycomb, Jaeger, Seq, Datadog and so on | `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4317`) and any other standard `OTEL_*` setting |
+
+The startup line names the exporter in use: `... telemetry export AzureMonitor ...`.
+
+#### Console log
+
+The default is one line per record, with a UTC timestamp:
+
+```
+2026-10-14 16:14:14 info: McpMySite.Server.Search.SiteSearchService[0] Search (api) -> 4 hits in 12 ms (limit 10, keyword fallback False)
+```
+
+The standard .NET settings change it, in `appsettings.json` or as environment variables (`__` for `:`):
+
+| Setting | Effect |
+|---|---|
+| `Logging:LogLevel:<category>` | Level for every category that starts with that name. `Logging__LogLevel__McpMySite=Debug` turns on debug for this project's code only. |
+| `Logging:Console:FormatterName` | `json` writes one JSON object per line, each value its own field, for log shippers that parse JSON; `systemd` suits journald. |
+| `Logging:Console:FormatterOptions:*` | `TimestampFormat`, `UseUtcTimestamp`, `SingleLine` (simple only), `IncludeScopes` (adds trace and span ids and the request path, most useful with `json`). |
+| `Logging:Console:LogLevel:Default` | `None` turns the console off, for when the exporter is the only place you read logs. |
+
+What the server logs:
+
+| Category | Level | What |
+|---|---|---|
+| `McpMySite.Server.Startup` | Information, Warning | Once at startup: version, environment, endpoints, embedding endpoint, exporter and whether query text is logged. A warning when no embedding key is set. |
+| `McpMySite.Server.Index.*` | Information, Warning, Error, Debug | The index source and poll interval; each load with store, pages, chunks, build time, model and duration; downloads. A failed load is a warning while an older index keeps serving and an error when none is loaded. Polls that find nothing new are debug. |
+| `McpMySite.Server.Search.SiteSearchService` | Information, Warning, Debug | Every search (channel, hits, duration, limit, keyword fallback) and every fetch (the page URL and duration, or "no such page"). The first embedding failure is a warning with the exception, repeats are debug, and recovery is logged. Searches refused because no index is loaded are warnings. |
+| `McpMySite.Server.Requests` | Warning | Requests turned away: a missing or invalid MCP API key, or the rate limit. Method and path only. |
+| `McpMySite.Server.Pages.LlmsTxt` | Information | Each time `llms.txt` is built. |
+| `Microsoft.AspNetCore.HttpLogging` | Information | One line per request: method, path, status and duration. `/healthz` is left out. Set to `Warning` to turn these off. |
+| `ModelContextProtocol` | Information, Error | The MCP SDK's own lines for each call. It logs tool errors, such as an empty query or an unknown page, as errors with their message. Set to `Warning` for the errors only. |
+
+The indexer logs each page it indexes, the crawl and sitemap summary, embedding progress and retries,
+and the result. `--verbose` adds every page read and why any page was skipped: robots.txt, noindex,
+duplicate, no text, not HTML, redirected off the site. Its categories are
+`McpMySite.Indexer.Build.IndexBuilder`, `...Sources.CrawlSource`, `...Sources.FolderSource` and
+`...Embeddings.BatchEmbedder`, so `--set Logging:LogLevel:McpMySite.Indexer.Sources.CrawlSource=Debug`
+details the crawl alone.
+
+**What is never logged.** Without `Telemetry:LogQueryText`, no log line or trace carries what someone
+searched for: search lines leave the query out, request lines leave the query string out, and a fetch
+for a page that does not exist is logged without the URL that was asked for. Keys are never logged,
+and the query string of `Index:Url`, which can hold a SAS token, is stripped wherever the URL appears.
+
+#### Exported logs
+
+The exporter receives the same records as the console with two exceptions, set under
+`Logging:OpenTelemetry:LogLevel` in the server's `appsettings.json`: the per-request lines and the
+MCP SDK's per-call lines stay on the console, because the exported request and MCP spans already carry
+the same information. Remove those two entries to export them too. Exported records keep their
+values as separate fields and are linked to the trace they were written in.
+
+#### Traces and metrics
+
+Besides incoming requests, outgoing HTTP calls and .NET runtime metrics, the server records:
 
 | Signal | Name | Tags |
 |---|---|---|
+| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`) |
+| Span | `mcpmysite.fetch` | `mcpmysite.channel`, `mcpmysite.found`, `mcpmysite.url` (pages found; misses only with `Telemetry:LogQueryText`) |
+| Span | `mcpmysite.index.load` | `mcpmysite.index.source` (`path` or `url`), `mcpmysite.index.outcome` |
 | Counter | `mcpmysite.search.requests` | `channel` (`mcp` or `api`), `fallback` (`true` when keyword-only) |
 | Histogram | `mcpmysite.search.duration` (ms) | same |
 | Counter | `mcpmysite.fetch.requests` | `channel`, `found` |
-| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`) |
-| Span | `mcpmysite.fetch` | `mcpmysite.channel`, `mcpmysite.found` |
+| Histogram | `mcpmysite.fetch.duration` (ms) | same |
+| Counter | `mcpmysite.index.loads` | `outcome`: `loaded`, `unchanged`, `failed` or `cancelled` |
+| Histogram | `mcpmysite.index.load.duration` (ms) | same |
+| Counter | `mcpmysite.requests.rejected` | `reason`: `api_key` or `rate_limit` |
+| Gauge | `mcpmysite.index.age` (s) | Time since the loaded index was built. Alert on it to catch a rebuild that stopped running. |
+| Gauge | `mcpmysite.index.pages` | Pages in the loaded index. |
 
-Export: set `APPLICATIONINSIGHTS_CONNECTION_STRING` for Application Insights, or
-`OTEL_EXPORTER_OTLP_ENDPOINT` for any OTLP collector (Grafana, Honeycomb, Jaeger and so on). With
-neither set, telemetry stays local.
+It also collects the MCP SDK's spans and metrics (one span per JSON-RPC call, such as
+`tools/call search`, with the tool name) and the embedding calls, which follow the OpenTelemetry GenAI
+conventions: model, duration and token usage, never the text.
 
-Example Application Insights queries (adjust table names to your workspace):
+The indexer reports as service `mcpmysite-indexer`:
+
+| Signal | Name | Tags |
+|---|---|---|
+| Span | `mcpmysite.build` | `mcpmysite.site`, `mcpmysite.source`, `mcpmysite.store`, `mcpmysite.succeeded`, `mcpmysite.pages`. Children: `mcpmysite.build.collect` (with every page request), `mcpmysite.build.embed` (with every embedding request) and `mcpmysite.build.write` |
+| Histogram | `mcpmysite.build.duration` (s) | `site`, `source`, `store`, `result` (`succeeded` or `failed`) |
+| Counter | `mcpmysite.build.pages` | same, plus `outcome`: `indexed`, `noindex`, `duplicate`, `empty` or `failed` |
+| Counter | `mcpmysite.build.chunks` | same as the duration |
+| Counter | `mcpmysite.build.embeddings` | same, plus `origin`: `generated` or `cache` |
+
+The indexer sends everything before it exits, so a CI run loses nothing. Give the CI job the same
+`APPLICATIONINSIGHTS_CONNECTION_STRING` as the server to see builds and queries in one place.
+
+#### Application Insights
+
+On App Service, turning Application Insights on sets `APPLICATIONINSIGHTS_CONNECTION_STRING`, and
+`Auto` picks it up. The exporter samples: it keeps up to five traces a second, and the logs written
+inside a trace it drops are dropped with it. To keep everything, set `AzureMonitor__SamplingRatio=1`
+and an empty `AzureMonitor__TracesPerSecond`. `AzureMonitor:*` takes the exporter's other options
+too, such as `EnableLiveMetrics=false`. The indexer always keeps its one trace per build.
+
+Example queries (adjust table names to your workspace):
 
 ```kusto
 // Searches per hour by channel, and how many fell back to keyword search
@@ -925,7 +1020,28 @@ dependencies
 | summarize p50 = percentile(duration, 50), p95 = percentile(duration, 95) by bin(timestamp, 1h), tostring(customDimensions["mcpmysite.channel"])
 ```
 
-Query text is not logged or tagged unless `Telemetry:LogQueryText` is `true`.
+```kusto
+// Age of the index each instance serves, in days
+customMetrics
+| where name == "mcpmysite.index.age"
+| summarize ageDays = max(value) / 86400 by bin(timestamp, 1h), cloud_RoleInstance
+```
+
+```kusto
+// Pages per build, by outcome
+customMetrics
+| where name == "mcpmysite.build.pages"
+| extend outcome = tostring(customDimensions.outcome), site = tostring(customDimensions.site)
+| summarize pages = sum(value) by bin(timestamp, 1d), site, outcome
+```
+
+```kusto
+// Warnings and errors from either program, newest first
+traces
+| where severityLevel >= 2
+| project timestamp, cloud_RoleName, category = tostring(customDimensions.CategoryName), message
+| order by timestamp desc
+```
 
 ## 8. Connecting MCP clients
 
@@ -1123,6 +1239,10 @@ jobs:
 The build step exits non-zero when a safety check fails, so a broken crawl stops the workflow before
 the publish step and the server keeps serving the previous index.
 
+To see builds in Application Insights next to the server, add
+`APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}` to the
+build step's `env` (section 7.10). Add `--verbose` to the command when a crawl needs explaining.
+
 ### 10.4 Other hosts
 
 The server is a plain ASP.NET Core container with no Azure dependency. It runs on Azure Container
@@ -1148,9 +1268,12 @@ into memory, so size instances by index size rather than request volume. A few h
 comfortably in the smallest App Service plan.
 
 **Monitoring.** Watch `/healthz` for `503` and for a `lastError` that persists, the `fallback=true`
-share of `mcpmysite.search.requests` (your embedding provider is failing), `429` counts (limit too
-low or proxy misconfigured), and `report.json` in your CI artifacts for rising `lowTextPages` or
-`errors`.
+share of `mcpmysite.search.requests` (your embedding provider is failing), `mcpmysite.index.age`
+growing past your rebuild interval (the index stopped being rebuilt or published),
+`mcpmysite.index.loads` with `outcome=failed`, `mcpmysite.requests.rejected` (limit too low, proxy
+misconfigured, or clients with a wrong key), and `report.json` in your CI artifacts, or
+`mcpmysite.build.pages`, for rising `failed` or falling `indexed` counts. Section 7.10 lists every
+signal and log category.
 
 **Costs.** Embedding is cents per rebuild (section 5.4). Query embeddings are negligible. The server's
 cost is the hosting plan.
@@ -1162,8 +1285,11 @@ cost is the hosting plan.
   API key, and the CORS allowlists for browsers.
 - **Read-only.** The tools cannot change anything. There are no write paths in the server.
 - **Secrets.** Keys are read from environment variables. Nothing in the index, the config files or the
-  logs contains a key. `Embeddings:ApiKey` exists for user secrets and environment variables, not for files in the repository.
-- **Query privacy.** Query text is not logged or exported unless `Telemetry:LogQueryText` is on.
+  logs contains a key, and the query string of `Index:Url` (where a SAS token would be) is stripped
+  from logs. `Embeddings:ApiKey` exists for user secrets and environment variables, not for files in the repository.
+- **Query privacy.** Query text, request query strings and fetch targets that match no page are not
+  logged or exported unless `Telemetry:LogQueryText` is on. Rejected requests are logged by method
+  and path, without the client's address.
 - **Injection safety.** Snippets are HTML-escaped (only `<mark>` is added). SQLite FTS queries are
   built from quoted tokens, never from raw input. JSON-RPC errors do not include stack traces.
 - **Crawling politely.** The indexer identifies itself, obeys `robots.txt` and `noindex`, retries only
@@ -1277,8 +1403,9 @@ slash, no path). `www` and non-`www` are different origins.
 
 **Every search response has `"keywordOnly": true`.**
 Query embedding is failing: no key on the server, wrong `Embeddings:Endpoint`, or the provider is
-down. Results still come from keyword search. Check the server log for
-"Embedding failed; answering from keyword search".
+down. Results still come from keyword search. Check the server log: a missing key is reported at
+startup ("No embedding API key"), and any other failure as "Embedding failed; answering from keyword
+search until it recovers", with the exception, the first time it happens.
 
 **`Index format version 2 is not supported.`**
 The index was built by a newer indexer than the server understands. Update the server, or rebuild

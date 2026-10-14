@@ -105,6 +105,16 @@ public static class IndexerConfigLoader
                 ["Default"] = "Information",
                 ["System.Net.Http"] = "Warning",
             },
+            // "simple", "json" or "systemd"; the same formatter options as any .NET console logger.
+            ["Console"] = new JsonObject
+            {
+                ["FormatterName"] = "simple",
+                ["FormatterOptions"] = new JsonObject
+                {
+                    ["SingleLine"] = true,
+                    ["TimestampFormat"] = "HH:mm:ss ",
+                },
+            },
         };
 
         return node.ToJsonString(options);

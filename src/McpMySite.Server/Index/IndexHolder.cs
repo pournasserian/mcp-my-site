@@ -9,6 +9,29 @@ public sealed class IndexHolder
     private static readonly TimeSpan DisposeDelay = TimeSpan.FromSeconds(30);
     private IIndexStore? _current;
 
+    /// <param name="meterFactory">
+    /// Publishes the age and size of the loaded index as gauges, so an index that stopped being rebuilt can be
+    /// alerted on. The host supplies it; a holder created without one records nothing.
+    /// </param>
+    public IndexHolder(IMeterFactory? meterFactory = null)
+    {
+        if (meterFactory is null)
+        {
+            return;
+        }
+
+        var meter = meterFactory.Create(ServerDiagnostics.Name);
+        meter.CreateObservableGauge(
+            "mcpmysite.index.age",
+            () => Current is { } store ? [new Measurement<double>((DateTimeOffset.UtcNow - store.Manifest.BuiltAt).TotalSeconds)] : Array.Empty<Measurement<double>>(),
+            unit: "s",
+            description: "Time since the loaded index was built. Absent while no index is loaded.");
+        meter.CreateObservableGauge(
+            "mcpmysite.index.pages",
+            () => Current is { } store ? [new Measurement<int>(store.Manifest.PageCount)] : Array.Empty<Measurement<int>>(),
+            description: "Pages in the loaded index.");
+    }
+
     public IIndexStore? Current => Volatile.Read(ref _current);
 
     public DateTimeOffset? LoadedAt { get; private set; }

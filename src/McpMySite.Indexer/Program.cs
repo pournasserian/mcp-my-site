@@ -69,14 +69,27 @@ static Command BuildCommand()
             return 2;
         }
 
-        using var loggerFactory = CreateLoggerFactory(loaded, parseResult.GetValue(verboseOption));
-        var logger = loggerFactory.CreateLogger<IndexBuilder>();
-        logger.LogInformation("Environment {Environment}; config {Config}", loaded.EnvironmentName, loaded.ConfigFile ?? "(defaults and overrides only)");
+        IndexerTelemetry telemetry;
+        try
+        {
+            telemetry = IndexerTelemetry.Start(loaded.Configuration, config.Telemetry, parseResult.GetValue(verboseOption));
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 2;
+        }
+
+        using var _ = telemetry;
+        var logger = telemetry.LoggerFactory.CreateLogger<IndexBuilder>();
+        logger.LogInformation(
+            "mcpmysite {Version}; environment {Environment}; config {Config}; telemetry export {Exporter}",
+            typeof(IndexBuilder).Assembly.GetName().Version?.ToString(3), loaded.EnvironmentName, loaded.ConfigFile ?? "(defaults and overrides only)", telemetry.Exporter);
 
         BuildReport report;
         try
         {
-            report = await new IndexBuilder(logger).RunAsync(config, loaded.BaseDirectory, cancellationToken);
+            report = await new IndexBuilder(telemetry.LoggerFactory).RunAsync(config, loaded.BaseDirectory, cancellationToken);
         }
         catch (InvalidOperationException ex)
         {
@@ -174,20 +187,6 @@ static Command SearchCommand()
 
     return command;
 }
-
-static ILoggerFactory CreateLoggerFactory(IndexerConfigLoader.Loaded loaded, bool verbose) => LoggerFactory.Create(logging =>
-{
-    logging.AddConfiguration(loaded.Configuration.GetSection("Logging"));
-    logging.AddSimpleConsole(o =>
-    {
-        o.SingleLine = true;
-        o.TimestampFormat = "HH:mm:ss ";
-    });
-    if (verbose)
-    {
-        logging.SetMinimumLevel(LogLevel.Debug);
-    }
-});
 
 static void PrintSummary(BuildReport report)
 {

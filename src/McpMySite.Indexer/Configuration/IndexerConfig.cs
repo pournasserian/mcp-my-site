@@ -30,6 +30,8 @@ public sealed class IndexerConfig
 
     public InstructionsConfig Instructions { get; set; } = new();
 
+    public TelemetryConfig Telemetry { get; set; } = new();
+
     public void Validate()
     {
         if (!Uri.TryCreate(Site.Url, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
@@ -158,4 +160,10 @@ public sealed class InstructionsConfig
 {
     /// <summary>Optional text placed before the generated site outline in the MCP server instructions.</summary>
     public string? Preamble { get; set; }
+}
+
+public sealed class TelemetryConfig
+{
+    /// <summary>Where traces, metrics and logs of a build are exported on top of the console log.</summary>
+    public TelemetryExporter Exporter { get; set; } = TelemetryExporter.Auto;
 }
