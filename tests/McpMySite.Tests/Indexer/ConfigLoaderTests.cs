@@ -39,7 +39,7 @@ public class ConfigLoaderTests
         Assert.Equal("sqlite", loaded.Config.Output.Store);
         Assert.Equal(900, loaded.Config.Chunking.MaxChars);
         Assert.Equal(3, loaded.Config.Safety.MinPages);
-        Assert.Equal("OPENROUTER_API_KEY", loaded.Config.Embeddings.ApiKeyEnvironmentVariable);
+        Assert.Equal("AI_API_KEY", loaded.Config.Embeddings.ApiKeyEnvironmentVariable);
     }
 
     [Fact]

@@ -67,8 +67,8 @@ Principles that shape everything below:
 | Need | Details |
 |---|---|
 | .NET 10 SDK | To build and run. The runtime alone is enough for a published server. |
-| An embeddings endpoint | Any OpenAI-compatible `/embeddings` endpoint. The default is OpenRouter with `openai/text-embedding-3-small` at 512 dimensions. |
-| An API key | Read from an environment variable, `OPENROUTER_API_KEY` by default. Never written to a config file or the index. |
+| An embeddings endpoint | Any OpenAI-compatible `/embeddings` endpoint: an AI gateway (OpenRouter, Vercel AI Gateway, LiteLLM), a provider's own API (OpenAI, Azure OpenAI, Google Gemini) or a local server (Ollama). The default is OpenRouter with `openai/text-embedding-3-small` at 512 dimensions. See section 5.3. |
+| An API key | For that endpoint, read from an environment variable, `AI_API_KEY` by default. Never written to a config file or the index. |
 | A plain-HTML site | Pages must be fetchable over HTTP as HTML. JavaScript-rendered sites, PDFs and pages behind a login are out of scope. If your build produces static HTML, point the indexer at the folder instead. |
 | Docker (optional) | For the container image of the server. |
 
@@ -127,7 +127,7 @@ The Dockerfile lives at `src/McpMySite.Server/Dockerfile` and must be built from
 docker build -f src/McpMySite.Server/Dockerfile -t mcp-my-site .
 docker run --rm -p 8080:8080 \
   -e Index__Url=https://example.com/index/ \
-  -e OPENROUTER_API_KEY=... \
+  -e AI_API_KEY=... \
   mcp-my-site
 ```
 
@@ -141,8 +141,8 @@ Five steps from nothing to an MCP server answering questions about your site.
 # 1. Make a config file for your site (writes appsettings.json in the current folder)
 mcpmysite init https://example.com
 
-# 2. Put your embeddings key in the environment (see section 5 for each OS)
-export OPENROUTER_API_KEY=sk-or-...
+# 2. Put your embeddings provider's API key in the environment (see section 5 for each OS)
+export AI_API_KEY=sk-...
 
 # 3. Build the index into ./index
 mcpmysite build
@@ -169,16 +169,21 @@ Point an MCP client at `http://localhost:5000/mcp` (section 8) and ask it someth
 Embeddings turn text into vectors so the search understands meaning as well as words. The indexer
 embeds every chunk once at build time; the server embeds each query at search time.
 
+mcp-my-site talks to any endpoint that speaks the OpenAI embeddings API, so you can use an AI
+gateway, a model provider directly, or a model running on your own machine. Nothing in the code is
+tied to one vendor; the endpoint, model and key variable are plain settings.
+
 ### 5.1 Default: OpenRouter
 
-The defaults work with an [OpenRouter](https://openrouter.ai) account:
+The shipped defaults point at [OpenRouter](https://openrouter.ai), so they work as-is with an
+OpenRouter key. To use something else, see section 5.3.
 
 | Setting | Default |
 |---|---|
 | Endpoint | `https://openrouter.ai/api/v1` |
 | Model | `openai/text-embedding-3-small` |
 | Dimensions | 512 (the model's native 1,536 reduced to 512; OpenRouter honours the `Embeddings:Dimensions` parameter) |
-| Key variable | `OPENROUTER_API_KEY` |
+| Key variable | `AI_API_KEY` |
 
 ### 5.2 Setting the key
 
@@ -187,15 +192,15 @@ or the server:
 
 ```bash
 # macOS and Linux (bash, zsh)
-export OPENROUTER_API_KEY=sk-or-...
+export AI_API_KEY=sk-...
 ```
 
 ```powershell
 # Windows PowerShell, current session
-$env:OPENROUTER_API_KEY = "sk-or-..."
+$env:AI_API_KEY = "sk-..."
 
 # Windows, persistent for your user (new terminals only)
-[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "sk-or-...", "User")
+[Environment]::SetEnvironmentVariable("AI_API_KEY", "sk-...", "User")
 ```
 
 In CI, store it as a secret and expose it as an environment variable for the build step (section 10.3).
@@ -209,16 +214,33 @@ running with the `Development` environment. `Embeddings:ApiKey` takes precedence
 
 ### 5.3 Other providers
 
-Any OpenAI-compatible endpoint works. Change `Embeddings:Endpoint`, `Embeddings:Model`,
-`Embeddings:Dimensions` and `Embeddings:ApiKeyEnvironmentVariable` in `appsettings.json`, and set the
-matching `Embeddings:Endpoint` and `Embeddings:ApiKeyEnvironmentVariable` on the server.
+Any OpenAI-compatible endpoint works. In the indexer's `appsettings.json`, change
+`Embeddings:Endpoint` and `Embeddings:Model`, and `Embeddings:Dimensions` if the model needs it. On
+the server, set the same `Embeddings:Endpoint`. Put that provider's key in `AI_API_KEY`. If you'd
+rather keep a variable name you already use, such as `OPENAI_API_KEY`, set
+`Embeddings:ApiKeyEnvironmentVariable` to that name on both sides.
+
+AI gateways sit in front of many providers behind one key and one bill:
+
+| Gateway | Endpoint | Example model | Notes |
+|---|---|---|---|
+| [OpenRouter](https://openrouter.ai) | `https://openrouter.ai/api/v1` | `openai/text-embedding-3-small` | Default. |
+| [Vercel AI Gateway](https://vercel.com/ai-gateway) | `https://ai-gateway.vercel.sh/v1` | `openai/text-embedding-3-small` | Use an AI Gateway API key. |
+| [LiteLLM](https://docs.litellm.ai) proxy (self-hosted) | `http://localhost:4000/v1` | the `model_name` from your proxy config | The key is a LiteLLM virtual key or the proxy's master key. |
+
+Or call a provider directly:
 
 | Provider | Endpoint | Example model | Notes |
 |---|---|---|---|
-| OpenRouter | `https://openrouter.ai/api/v1` | `openai/text-embedding-3-small` | Default. |
-| OpenAI | `https://api.openai.com/v1` | `text-embedding-3-small` | Set `Embeddings:ApiKeyEnvironmentVariable` to `OPENAI_API_KEY`. |
-| Ollama (local) | `http://localhost:11434/v1` | `nomic-embed-text` | Set `Embeddings:Dimensions` to the model's native size (768 for this one). The key variable must hold any non-empty value. |
-| Other gateways | their `/v1` base URL | | Must accept `POST /embeddings` with `model`, `input` and, if you reduce dimensions, `Embeddings:Dimensions`. |
+| OpenAI | `https://api.openai.com/v1` | `text-embedding-3-small` | |
+| Azure OpenAI | `https://<resource>.openai.azure.com/openai/v1` | your embedding deployment name | Uses the v1 API. The model is the deployment name, not the model name. |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-embedding-001` | Use a Gemini API key. |
+| Ollama (local) | `http://localhost:11434/v1` | `nomic-embed-text` | Set `Embeddings:Dimensions` to the model's native size (768 for this one). `AI_API_KEY` must hold any non-empty value. |
+
+Anything else works too, as long as it accepts `POST /embeddings` with `model`, `input` and
+`dimensions`, using a bearer-token key. Gateways that need extra request headers are not supported.
+Every request sends `dimensions` (the value of `Embeddings:Dimensions`). For a model that cannot
+shorten its vectors, set it to the model's native size.
 
 Rules of thumb:
 
@@ -333,7 +355,7 @@ which is why their shipped defaults are empty.
 | `Embeddings:Endpoint` | string | `https://openrouter.ai/api/v1` | OpenAI-compatible base URL. |
 | `Embeddings:Model` | string | `openai/text-embedding-3-small` | Model id as the endpoint expects it. |
 | `Embeddings:Dimensions` | int | `512` | Requested vector size. Must match what the model returns. |
-| `Embeddings:ApiKeyEnvironmentVariable` | string | `OPENROUTER_API_KEY` | Environment variable that holds the key. |
+| `Embeddings:ApiKeyEnvironmentVariable` | string | `AI_API_KEY` | Environment variable that holds the key. |
 | `Embeddings:ApiKey` | string | | Direct key value. Takes precedence when set. Avoid outside local experiments. |
 | `Embeddings:BatchSize` | int | `64` | Chunks per embeddings request. |
 | `Cache:Enabled` | bool | `true` | Cache embeddings so unchanged chunks are not re-embedded. |
@@ -544,7 +566,7 @@ Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
 Index__Path=/srv/index ASPNETCORE_URLS=http://0.0.0.0:8080 dotnet McpMySite.Server.dll
 
 # Container
-docker run -p 8080:8080 -e Index__Url=https://example.com/index/ -e OPENROUTER_API_KEY=... mcp-my-site
+docker run -p 8080:8080 -e Index__Url=https://example.com/index/ -e AI_API_KEY=... mcp-my-site
 ```
 
 `dotnet run` starts the server in `src/McpMySite.Server` and listens on `http://localhost:5000`, as set
@@ -567,7 +589,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `Index:Url` | | URL of `manifest.json`, or of the folder that contains it. Takes precedence over `Path`. |
 | `Index:PollIntervalSeconds` | `300` | How often to check for a new manifest. `0` loads once and never polls. |
 | `Embeddings:Endpoint` | `https://openrouter.ai/api/v1` | OpenAI-compatible base URL used to embed queries. |
-| `Embeddings:ApiKeyEnvironmentVariable` | `OPENROUTER_API_KEY` | Environment variable that holds the key. |
+| `Embeddings:ApiKeyEnvironmentVariable` | `AI_API_KEY` | Environment variable that holds the key. |
 | `Embeddings:ApiKey` | | Direct key value; prefer the variable or user-secrets. |
 | `Mcp:Path` | `/mcp` | MCP endpoint path. |
 | `Mcp:ServerName` | `mcp-my-site` | Reported as the server name to MCP clients and used as the telemetry service name. |
@@ -957,7 +979,7 @@ az webapp config appsettings set --resource-group mcp-my-site --name <app-name> 
   Index__Url=https://example.com/index/ \
   SearchApi__AllowedOrigins__0=https://example.com \
   APPLICATIONINSIGHTS_CONNECTION_STRING="<connection string>" \
-  OPENROUTER_API_KEY="@Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/openrouter-key/)"
+  AI_API_KEY="@Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/ai-api-key/)"
 ```
 
 Notes:
@@ -1009,7 +1031,7 @@ jobs:
 
       - name: Build index
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
         run: dotnet run --project .mcp-my-site/src/McpMySite.Indexer -c Release -- build --config mcp/appsettings.json
 
       - name: Publish index
@@ -1101,7 +1123,7 @@ You are in the wrong folder or have not created the config yet. Run `mcpmysite i
 The setting is missing or malformed in the layer that won. Check `appsettings.json`, any
 `appsettings.{Environment}.json` that applies, and a stray `Site__Url` environment variable.
 
-**`No embedding API key. Set the OPENROUTER_API_KEY environment variable.`**
+**`No embedding API key. Set the AI_API_KEY environment variable.`**
 The variable named by `Embeddings:ApiKeyEnvironmentVariable` is not set in this shell or CI job. The
 indexer refuses to run without it because hybrid search needs vectors. Section 5.2.
 
@@ -1192,7 +1214,8 @@ product is the combination. The only keyword-only path is the per-request fallba
 fails at query time, and that is recorded so you notice.
 
 **Which embedding models can I use?**
-Any model behind an OpenAI-compatible `/embeddings` endpoint. The documented default is
+Any model behind an OpenAI-compatible `/embeddings` endpoint, whether a gateway, a provider or a
+local server (section 5.3). The documented default is
 `text-embedding-3-small` at 512 dimensions through OpenRouter. Changing model or dimensions triggers a
 full re-embed on the next build; the index records what it was built with and the server follows it.
 

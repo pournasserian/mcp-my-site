@@ -7,20 +7,24 @@ built for sites under 1,000 pages. .NET 10, MIT licence.
 
 ## Quick start
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and an
-[OpenRouter](https://openrouter.ai) API key for embeddings. From a fresh clone:
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and an API key for any
+OpenAI-compatible embeddings endpoint. That can be an AI gateway such as
+[OpenRouter](https://openrouter.ai) (the default), [Vercel AI Gateway](https://vercel.com/ai-gateway)
+or a self-hosted [LiteLLM](https://docs.litellm.ai) proxy, or a provider directly: OpenAI, Azure
+OpenAI, Google Gemini, or [Ollama](https://ollama.com) running locally. See
+[Other providers](docs/user-guide.md#53-other-providers) to switch away from OpenRouter. From a fresh clone:
 
 ```bash
 git clone https://github.com/pournasserian/mcp-my-site.git
 cd mcp-my-site
-export OPENROUTER_API_KEY=sk-or-...    # embeddings key, never stored in files
+export AI_API_KEY=sk-...    # your provider's API key, never stored in files
 dotnet run --project src/McpMySite.Indexer -- init https://example.com
 dotnet run --project src/McpMySite.Indexer -- build
 dotnet run --project src/McpMySite.Indexer -- search "how do I reset my password"
 Index__Path=$PWD/index dotnet run --project src/McpMySite.Server
 ```
 
-On Windows PowerShell, set the variables with `$env:OPENROUTER_API_KEY = "sk-or-..."` and
+On Windows PowerShell, set the variables with `$env:AI_API_KEY = "sk-..."` and
 `$env:Index__Path = "$PWD/index"` instead.
 
 `init` writes `appsettings.json`, `build` crawls the site and writes `./index`, and `search` checks the

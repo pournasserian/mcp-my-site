@@ -41,7 +41,7 @@ flowchart LR
         Server --> API["Site search box<br/>GET /api/search"]
     end
 
-    Embed["Embeddings endpoint<br/>OpenRouter by default"]
+    Embed["OpenAI-compatible embeddings endpoint<br/>OpenRouter by default"]
     Indexer -- "embed chunks" --> Embed
     Server -- "embed queries" --> Embed
 ```
