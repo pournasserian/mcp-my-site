@@ -1016,6 +1016,12 @@ Behind Cloudflare, each request span also carries `cloudflare.ray_id` (from `CF-
 `cloudflare.country` (from `CF-IPCountry`) and `client.address` (the visitor, section 7.6). They are
 set only when the connection comes from Cloudflare's ranges.
 
+In Application Insights the Ray ID and country are custom dimensions on the request, which is the
+join key to the Cloudflare dashboards. `client.address` is consumed by the exporter into the request's
+`client_IP`, and Application Insights masks that field to `0.0.0.0` by default, so the visitor's
+address is not readable there. Use the Ray ID, or turn on `Telemetry:LogBodies` briefly, which logs
+the forwarded address headers.
+
 It also collects the MCP SDK's spans and metrics (one span per JSON-RPC call, such as
 `tools/call search`, with the tool name) and the embedding calls, which follow the OpenTelemetry GenAI
 conventions: model, duration and token usage, never the text.
@@ -1220,8 +1226,10 @@ The architecture document has a diagram of how the pieces connect (section 5.5).
 
 You need the Azure CLI, signed in with Owner (or Contributor plus User Access Administrator) on the
 resource group, because the template assigns roles, and a Cloudflare account with the domain's DNS
-zone. Run from the repository root, with a built index in `./index`. The first deployment leaves the
-app out (`deployApp=false`) because it cannot start before its image is in the registry:
+zone. Run from the repository root, with a built index in `./index`. On a new resource group the
+first deployment leaves the app out (`deployApp=false`) because it cannot start before its image is in
+the registry. When the registry already holds the image and the index is uploaded, as when moving an
+existing deployment, skip step 1 and deploy with the defaults:
 
 ```powershell
 $env:AI_API_KEY = "sk-..."
@@ -1272,9 +1280,9 @@ can be **Full (strict)**.
    | `CNAME` | `ai` | `containerAppFqdn` from the outputs |
    | `TXT` | `asuid.ai` | `customDomainVerificationId` from the outputs |
 
-   If binding the domain in the next step fails its ownership check because the proxied `CNAME`
-   hides the target, switch the `CNAME` to DNS only (grey cloud) for the deployment and turn the
-   proxy back on afterwards.
+   Binding the domain worked with the `CNAME` proxied. If the ownership check ever fails because
+   the proxy hides the target, switch the `CNAME` to DNS only (grey cloud) for the deployment and turn
+   the proxy back on afterwards.
 3. **Bind the domain** with a second deployment that sets `customDomain` (or set it in
    `main.bicepparam`):
 
@@ -1284,7 +1292,13 @@ can be **Full (strict)**.
 
    The template registers the certificate in the environment from Key Vault and binds the domain
    with SNI. `Ui__PublicUrl` becomes the custom domain, so links and the sitemap use it.
-4. **Set SSL/TLS to Full (strict)** for the zone. Leave "Always use HTTPS" on.
+4. **Set the origin SSL/TLS mode to Full (strict)** for the hostname. Check the zone's current mode
+   first (SSL/TLS, Overview). On Flexible, Cloudflare reaches the origin over HTTP, the container app
+   redirects to HTTPS, and visitors get a redirect loop. Changing the mode of a zone that serves other
+   sites can break them, so unless the whole zone should be Full (strict), add a Configuration Rule
+   that applies only to this hostname: Rules, Overview, Configuration Rules, Create rule, with the
+   expression `http.host eq "ai.example.com"` and the SSL setting set to **Strict**. The SSL
+   drop-down in the rule form starts at Off, so set it before deploying the rule.
 5. **Add rules.** The server already limits each client IP (`RateLimiting:PermitPerMinute`), and
    behind Cloudflare that is the visitor's address (section 7.6). Cloudflare can stop abuse before it
    reaches the container, so under Security, WAF add a rate limiting rule for the paths `/mcp` and
