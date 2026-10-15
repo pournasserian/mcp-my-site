@@ -1335,7 +1335,9 @@ and fetches take well under a second, so this only matters if you add long-runni
   refused or the app cannot read Key Vault, wait and retry.
 - **Probes.** The startup, liveness and readiness probes all call `/healthz`, which answers `503`
   while no index is loaded. An app deployed before the first index upload is therefore restarted
-  repeatedly until the index is there.
+  repeatedly until the index is there. The startup probe waits up to 50 seconds for the first load.
+- **Restart alert.** It watches the cumulative `RestartCount` metric, so once a replica has restarted
+  the alert stays active until that replica is replaced, for example by the next deployment.
 - **Cloudflare ranges change rarely.** When Cloudflare publishes new ranges, update
   `cloudflareIpv4Ranges` and redeploy, or visitors on the new ranges are refused. The server's own
   trusted list (`Cloudflare:TrustedNetworks`) is in `appsettings.json`.
