@@ -7,6 +7,7 @@ services.Configure<McpOptions>(configuration.GetSection(McpOptions.SectionName))
 services.Configure<SearchApiOptions>(configuration.GetSection(SearchApiOptions.SectionName));
 services.Configure<RateLimitOptions>(configuration.GetSection(RateLimitOptions.SectionName));
 services.Configure<TelemetryOptions>(configuration.GetSection(TelemetryOptions.SectionName));
+services.Configure<CloudflareOptions>(configuration.GetSection(CloudflareOptions.SectionName));
 services.Configure<UiOptions>(configuration.GetSection(UiOptions.SectionName));
 services.Configure<EmbeddingOptions>(configuration.GetSection(EmbeddingOptions.SectionName));
 
@@ -123,6 +124,12 @@ if (rateLimitOptions.UseForwardedHeaders)
     app.UseForwardedHeaders();
 }
 
+// After forwarded headers, so that behind a proxy the address checked against the Cloudflare ranges is the one the
+// proxy saw. Before the rate limiter, which partitions on the address resolved here. Both middlewares pass requests
+// straight through unless Cloudflare:TrustConnectingIp or Telemetry:LogBodies asks for them.
+app.UseMiddleware<CloudflareClientIpMiddleware>();
+app.UseMiddleware<BodyLoggingMiddleware>();
+
 app.UseCors();
 app.UseRateLimiter();
 
@@ -200,8 +207,10 @@ app.Lifetime.ApplicationStarted.Register(() =>
 {
     var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(StartupLogCategory);
     var embeddingOptions = app.Services.GetRequiredService<IOptions<EmbeddingOptions>>().Value;
+    var telemetryOptions = app.Services.GetRequiredService<IOptions<TelemetryOptions>>().Value;
+    var cloudflareOptions = app.Services.GetRequiredService<IOptions<CloudflareOptions>>().Value;
     startupLogger.LogInformation(
-        "mcp-my-site {Version} ({Environment}): MCP at {McpPath} (API key {ApiKey}), search API {SearchApi}, pages {Pages}, embeddings at {EmbeddingEndpoint}, telemetry export {Exporter}, query text logging {LogQueryText}",
+        "mcp-my-site {Version} ({Environment}): MCP at {McpPath} (API key {ApiKey}), search API {SearchApi}, pages {Pages}, embeddings at {EmbeddingEndpoint}, telemetry export {Exporter}, query text logging {LogQueryText}, body logging {LogBodies}, Cloudflare client IP {CloudflareClientIp}",
         typeof(Program).Assembly.GetName().Version?.ToString(3),
         app.Environment.EnvironmentName,
         mcpOptions.Path,
@@ -210,7 +219,9 @@ app.Lifetime.ApplicationStarted.Register(() =>
         uiOptions.Enabled ? "on" : "off",
         embeddingOptions.Endpoint,
         telemetryExporter,
-        app.Services.GetRequiredService<IOptions<TelemetryOptions>>().Value.LogQueryText ? "on" : "off");
+        telemetryOptions.LogQueryText ? "on" : "off",
+        telemetryOptions.LogBodies ? "on" : "off",
+        cloudflareOptions.TrustConnectingIp && cloudflareOptions.TrustedNetworks.Length > 0 ? "on" : "off");
     if (string.IsNullOrWhiteSpace(embeddingOptions.ResolveApiKey()))
     {
         startupLogger.LogWarning(

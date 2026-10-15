@@ -90,4 +90,28 @@ public sealed class TelemetryOptions
     /// queries can contain personal data.
     /// </summary>
     public bool LogQueryText { get; set; }
+
+    /// <summary>
+    /// Log the request and response bodies of the MCP endpoint and the search API, capped at 8 KB each, with an
+    /// allowlist of headers and keys and secrets redacted. Includes the search text, so it is off by default.
+    /// </summary>
+    public bool LogBodies { get; set; }
+}
+
+public sealed class CloudflareOptions
+{
+    public const string SectionName = "Cloudflare";
+
+    /// <summary>
+    /// Take the client IP from CF-Connecting-IP, and tag requests with CF-Ray and CF-IPCountry, when the
+    /// connection comes from one of <see cref="TrustedNetworks"/>. Harmless without Cloudflare: a request from
+    /// anywhere else keeps its own address.
+    /// </summary>
+    public bool TrustConnectingIp { get; set; } = true;
+
+    /// <summary>
+    /// CIDR ranges of the Cloudflare edge, from https://www.cloudflare.com/ips. Compared with the address of the
+    /// caller after forwarded headers have been applied, so behind a reverse proxy it is the address the proxy saw.
+    /// </summary>
+    public string[] TrustedNetworks { get; set; } = [];
 }
