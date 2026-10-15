@@ -444,9 +444,10 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApp) 
               type: 'Startup'
               httpGet: { path: '/healthz', port: appPort }
               initialDelaySeconds: 2
-              periodSeconds: 3
+              periodSeconds: 5
               timeoutSeconds: 3
-              failureThreshold: 30
+              // The platform allows at most 10 failures: 50 seconds to load the index before a restart.
+              failureThreshold: 10
             }
             {
               type: 'Liveness'
@@ -551,7 +552,7 @@ resource alertRestarts 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deploy
   location: 'global'
   tags: allTags
   properties: {
-    description: 'A container restarted. Failing liveness probes, crashes and out-of-memory kills all count.'
+    description: 'A replica has restarted since it was created: failing liveness probes, crashes and out-of-memory kills all count. RestartCount is cumulative, so this stays active until the replica is replaced, for example by the next deployment.'
     severity: 2
     enabled: true
     scopes: [containerApp!.id]
@@ -568,7 +569,7 @@ resource alertRestarts 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deploy
           metricName: 'RestartCount'
           operator: 'GreaterThan'
           threshold: 0
-          timeAggregation: 'Total'
+          timeAggregation: 'Maximum'
         }
       ]
     }
