@@ -445,14 +445,15 @@ URL, look the page up in the store, return its Markdown and metadata, or a tool 
 
 - **Rate limiting** partitions a fixed one-minute window by client IP across MCP and search API.
   `/healthz` is outside the limiter so platform probes never trip it.
-- **Forwarded headers** are trusted by default (the Container Apps ingress and reverse proxies set
+- **Forwarded headers** are trusted by default (reverse proxies and platform ingresses set
   them); the setting exists to turn that off when Kestrel is exposed directly.
 - **Cloudflare client IP.** Behind Cloudflare the caller is an edge address. After forwarded headers,
   `CloudflareClientIpMiddleware` accepts `CF-Connecting-IP` only when the caller is inside
   `Cloudflare:TrustedNetworks` and writes it to the connection's remote address, so the rate limiter,
   which partitions on that address, needs no change. A request from elsewhere keeps its address and
   its `CF-*` headers are ignored. The ranges prove the request came through Cloudflare, not through
-  this deployment's zone; the ingress allow-list narrows who can reach the server at all.
+  your zone; restricting the origin to Cloudflare's ranges at the ingress narrows who can reach the
+  server at all.
 - **Body logging** is a middleware in front of CORS and the limiter, so rejected requests are
   logged too, with whatever body the handler read. It is off unless `Telemetry:LogBodies` is set.
 - **API key** is a tiny middleware on the MCP path only, comparing in constant time. The search API is
@@ -462,54 +463,29 @@ URL, look the page up in the store, return its Markdown and metadata, or a tool 
 
 ### 5.5 Hosting
 
-The reference deployment (`deploy/azure/main.bicep`) runs the server container on Azure Container
-Apps, on the Consumption plan, with Cloudflare as the only way in.
+The server is one stateless container. It needs the index (a URL or a folder), an embeddings endpoint
+and a secret key, and it listens on a single HTTP port.
 
 ```mermaid
 flowchart LR
-    V["MCP clients, browsers"] --> CF["Cloudflare<br/>proxied DNS, WAF and rate rules<br/>SSL Full (strict)"]
-    CF -- "TLS with Origin CA certificate<br/>ingress allows Cloudflare IPv4 only" --> CA
-
-    subgraph Azure["Resource group"]
-        subgraph CAE["Container Apps environment, Consumption"]
-            CA["Container app<br/>1 to N replicas, 0.25 vCPU, 0.5 GiB<br/>HTTP concurrency scaling"]
-        end
-        ID["User-assigned identity<br/>AcrPull, Key Vault Secrets User"]
-        ACR["Container Registry"]
-        KV["Key Vault<br/>API keys, Origin CA certificate"]
-        ST["Storage, index container"]
-        AI["Application Insights"]
-        LA["Log Analytics"]
-        AL["Alert rules<br/>5xx, restarts, replicas at 0"]
-    end
-
-    ID -. "assigned to" .-> CA
-    CA -- "image pull" --> ACR
-    CA -- "secret references" --> KV
-    CAE -- "Origin CA certificate" --> KV
-    CA -- "polls manifest" --> ST
-    CA -- "query embeddings" --> Embed["Embeddings endpoint"]
-    CA -- "traces, metrics, logs" --> AI --> LA
-    CAE -- "console and system logs" --> LA
-    AL -. "watch" .-> CA
+    V["MCP clients, browsers"] --> P["Reverse proxy, ingress or CDN<br/>TLS, client address headers"]
+    P --> S["Server container<br/>1 to N instances"]
+    S -- "polls manifest, loads files" --> I["Index location<br/>static site, object storage or folder"]
+    S -- "query embeddings" --> E["Embeddings endpoint"]
+    S -. "traces, metrics, logs" .-> T["Telemetry backend"]
+    B["Indexer, run in CI"] -- "publishes" --> I
+    B -- "document embeddings" --> E
 ```
 
-- **Why Cloudflare is in front.** It supplies the domain, the WAF, edge rate rules and DDoS
-  absorption, which a small container should not have to provide. The server stays unaware of it
-  except for the client address and the Ray ID (section 5.4).
-- **Closing the side door.** The generated `azurecontainerapps.io` host name resolves from anywhere, so
-  ingress accepts only Cloudflare's IPv4 ranges (`lockIngressToCloudflare`). Container Apps ingress
-  rules take IPv4 only, and the app's public address is IPv4, so Cloudflare reaches it from its IPv4 ranges.
-- **Certificates.** Cloudflare to origin uses a Cloudflare Origin CA certificate held in Key Vault and
-  registered in the environment, bound with SNI. Azure's managed certificate cannot be issued behind
-  the proxy. Rotating the Key Vault certificate updates the environment copy by itself.
-- **One identity.** The container app and the environment share a user-assigned identity, created
-  with its roles before either, so the image pull and the Key Vault references work on the first
-  start.
-- **Never scales to zero.** One replica always runs: a cold start has to load the index first, and an agent
-  would meet that as a slow or failed MCP call. The probes all use `/healthz`.
-- **Free plan limit.** Cloudflare's free plan cuts a request that is not answered within 100 seconds
-  (`524`). Search and fetch answer in well under a second.
+- **Nothing platform-specific in the image.** Settings are environment variables, the key is read from
+  the environment, and the only probe path is `/healthz`.
+- **Never scale to zero.** One instance should always run: a cold start has to load the index first, and
+  an agent would meet that as a slow or failed MCP call.
+- **A proxy is expected.** The server speaks HTTP and takes the visitor's address from forwarded
+  headers (section 5.4). Behind Cloudflare it also reads `CF-Connecting-IP`, but only from Cloudflare's
+  ranges.
+- **The index travels separately.** Publishing a new index never restarts the server; it polls the
+  manifest and swaps the new one in.
 
 ## 6. Index format and compatibility
 
@@ -571,18 +547,16 @@ endpoint and metrics).
 | Automatic content selection, no selectors | Per-site CSS selector overrides | Nothing to maintain or break on redesigns; the report shows what was picked |
 | Full rebuild with an embedding cache | Incremental crawl with change detection | Deleted pages vanish for free; the cache removes most of the cost of a full rebuild |
 | Markdown as the stored format | HTML, plain text | Readable by models and humans, keeps structure, small |
-| Azure Container Apps (Consumption, one replica always on) behind Cloudflare | App Service, with or without API Management | Pay for 0.25 vCPU, not a plan; scales out on HTTP concurrency; revisions and secret references built in; Cloudflare supplies the domain, WAF and edge rules |
-| Origin CA certificate and an ingress allow-list | A shared secret header checked by the server, Authenticated Origin Pulls | No server code and nothing to rotate in the app; the allow-list stops the generated host name being used to bypass Cloudflare |
 | Trust `CF-Connecting-IP` only from Cloudflare ranges | Trust it always, or trust only `X-Forwarded-For` | Anyone can send the header, and behind a proxy every visitor would otherwise share one address |
 | Chunks carry title and heading path | Bare text chunks | Headings disambiguate short sections and improve recall on section-level questions |
-| Per-IP fixed-window rate limit built in | Rely on a gateway | Works everywhere the container runs; a gateway (APIM) can still sit in front |
+| Per-IP fixed-window rate limit built in | Rely on a gateway | Works everywhere the container runs; a gateway can still sit in front |
 | Fail closed on build, fail open on query | Fail open everywhere, or fail closed everywhere | A broken index is worse than a stale one; a degraded answer is better than no answer |
 | Landing page rendered on the server with Razor components | A static page that fetches `/api/info`; a JavaScript framework | Crawlers and link previews see the full content; Razor encodes crawled titles and descriptions; no front-end build; ships in the shared framework |
 | Build stats in the manifest | Server reads `report.json` | Works the same for `Index:Url` and `Index:Path`; the report stays an owner's diagnostic file |
 
 ## 9. Extension points
 
-- **New index store** (for example Postgres or Azure AI Search): implement `IIndexStore` and
+- **New index store** (for example Postgres or a hosted search service): implement `IIndexStore` and
   `IIndexWriter` in Core or a separate package, register the type name in `IndexStoreOpener`
   (`OpenAsync`, `CreateWriter`, `FileNames`), and add it to the store contract tests, which run every
   behaviour test against every store.
@@ -592,9 +566,9 @@ endpoint and metrics).
   means another `IEmbeddingGenerator` implementation behind `EmbeddingGeneratorFactory`.
 - **V2 chat API**: a new endpoint group in the server that uses `SiteSearchService` as its retrieval
   tool; the index and search layers need no change.
-- **Azure scale profile**: the spec's three seams map to code boundaries: store (`IIndexStore`), model
+- **Scale profile**: the spec's three seams map to code boundaries: store (`IIndexStore`), model
   provider (`EmbeddingGeneratorFactory`), edge (rate limiter and API key middleware, replaceable by
-  API Management). Azure-specific implementations would ship as separate packages referencing Core.
+  an API gateway). Platform-specific implementations would ship as separate packages referencing Core.
 
 ## 10. Testing
 
@@ -642,7 +616,6 @@ src/
     Mcp/                           SiteTools
     Api/                           SearchEndpoints
     appsettings.json, Dockerfile
-deploy/azure/                      main.bicep (Container Apps behind Cloudflare), main.bicepparam
 tests/
   McpMySite.Tests/                 Core/, Indexer/, Server/, TestIndex (fixture builder), CapturedLogs, FakeCollector
 docs/

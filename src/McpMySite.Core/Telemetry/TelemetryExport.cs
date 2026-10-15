@@ -19,7 +19,7 @@ public enum TelemetryExporter
 /// <summary>Picks the exporter both the server and the indexer use, so the same settings behave the same in each.</summary>
 public static class TelemetryExport
 {
-    /// <summary>Set automatically by Azure App Service when Application Insights is turned on.</summary>
+    /// <summary>The Application Insights connection string, which some hosting platforms set automatically.</summary>
     public const string AzureMonitorConnectionStringKey = "APPLICATIONINSIGHTS_CONNECTION_STRING";
 
     public const string OtlpEndpointKey = "OTEL_EXPORTER_OTLP_ENDPOINT";

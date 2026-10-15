@@ -48,21 +48,6 @@ jobs:
       - name: Test
         run: dotnet test tests/McpMySite.Tests --configuration Release --no-build
 
-  bicep:
-    name: Bicep template
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-
-      # Compiles and lints the template; the placeholder key only satisfies readEnvironmentVariable.
-      - name: Build template and parameters
-        env:
-          AI_API_KEY: placeholder
-        run: |
-          az bicep build --file deploy/azure/main.bicep --stdout > /dev/null
-          az bicep build-params --file deploy/azure/main.bicepparam --stdout > /dev/null
-
   container:
     name: Container image
     runs-on: ubuntu-latest
