@@ -1,12 +1,13 @@
-// mcp-my-site on Azure App Service. See section 10.2 of docs/user-guide.md for the deployment steps.
+// mcp-my-site on Azure Container Apps behind Cloudflare. See section 10.2 of docs/user-guide.md for the
+// deployment steps.
 //
 // Names follow the Cloud Adoption Framework pattern <type>-<workload>-<environment>-<region>, with the
-// recommended abbreviations (log, appi, st, cr, kv, asp, app). Resources whose names must be unique across
+// recommended abbreviations (log, appi, st, cr, kv, id, cae, ca, ag). Resources whose names must be unique across
 // Azure also get a 4-character suffix derived from the resource group, so two deployments of this
 // template never collide. The storage account and key vault are capped at 24 characters, which is
 // why workload is limited to 9 characters and the key vault name leaves out the region.
 
-metadata description = 'mcp-my-site server on Azure App Service with its container registry, index storage, Key Vault and Application Insights.'
+metadata description = 'mcp-my-site server on Azure Container Apps behind Cloudflare, with its container registry, index storage, Key Vault, Application Insights and alerts.'
 
 @description('Short workload name used in every resource name. Lowercase letters and digits only.')
 @minLength(2)
@@ -29,12 +30,21 @@ param location string = resourceGroup().location
 @maxLength(4)
 param regionCode string = ''
 
-@description('App Service plan SKU. B1 is enough for a site under 1,000 pages.')
-param appServicePlanSku string = 'B1'
-
 @description('Repository and tag of the server image in the container registry.')
 param imageName string = 'mcp-my-site'
 param imageTag string = 'latest'
+
+@description('Create the container app. Set false on the very first deployment: the app cannot start before its image is in the registry, so deploy once without it, run az acr build, then deploy again.')
+param deployApp bool = true
+
+@description('Most replicas the HTTP concurrency rule may scale out to. The app always keeps one.')
+@minValue(1)
+@maxValue(10)
+param maxReplicas int = 2
+
+@description('Concurrent HTTP requests per replica that trigger a scale-out.')
+@minValue(1)
+param httpConcurrency int = 30
 
 @description('Key for the OpenAI-compatible embeddings endpoint, used to embed search queries. Stored in Key Vault.')
 @secure()
@@ -49,6 +59,40 @@ param mcpApiKey string = ''
 
 @description('Optional origin of the site, such as https://example.com, allowed to call the search API from a browser.')
 param siteOrigin string = ''
+
+@description('Log request and response bodies of the MCP endpoint and search API to Application Insights (Telemetry:LogBodies). Includes search text, so it is off by default.')
+param logBodies bool = false
+
+@description('Allow ingress only from the Cloudflare IPv4 ranges, so the generated azurecontainerapps.io host name cannot be used to bypass Cloudflare. Turn off for a first test without Cloudflare.')
+param lockIngressToCloudflare bool = true
+
+@description('Cloudflare IPv4 ranges, from https://www.cloudflare.com/ips-v4 (last checked 2026-10-15). Container Apps ingress rules accept IPv4 only.')
+param cloudflareIpv4Ranges array = [
+  '173.245.48.0/20'
+  '103.21.244.0/22'
+  '103.22.200.0/22'
+  '103.31.4.0/22'
+  '141.101.64.0/18'
+  '108.162.192.0/18'
+  '190.93.240.0/20'
+  '188.114.96.0/20'
+  '197.234.240.0/22'
+  '198.41.128.0/17'
+  '162.158.0.0/15'
+  '104.16.0.0/13'
+  '104.24.0.0/14'
+  '172.64.0.0/13'
+  '131.0.72.0/22'
+]
+
+@description('Custom domain, such as ai.example.com. Leave empty until the Cloudflare Origin CA certificate is in Key Vault; set it on a second deployment to bind the domain.')
+param customDomain string = ''
+
+@description('Name of the Origin CA certificate in Key Vault, imported with az keyvault certificate import before customDomain is set.')
+param originCertificateName string = 'origin-ca'
+
+@description('Email address for alerts. Empty creates the alert rules without notifying anyone.')
+param alertEmail string = ''
 
 @description('Give the identity running the deployment write access to the index container, so it can upload the index with --auth-mode login.')
 param grantDeployerIndexUpload bool = true
@@ -94,8 +138,11 @@ var names = {
   storageAccount: 'st${workload}${environmentName}${region}${suffix}'
   containerRegistry: 'cr${workload}${environmentName}${region}${suffix}'
   keyVault: 'kv-${workload}-${environmentName}-${suffix}'
-  appServicePlan: 'asp-${baseName}'
-  webApp: 'app-${baseName}-${suffix}'
+  identity: 'id-${baseName}'
+  containerEnvironment: 'cae-${baseName}'
+  containerApp: 'ca-${baseName}-${suffix}'
+  actionGroup: 'ag-${baseName}'
+  alertPrefix: 'alert-${baseName}'
 }
 
 var allTags = union({ workload: workload, environment: environmentName }, tags)
@@ -106,6 +153,20 @@ var roles = {
   keyVaultSecretsUser: '4633458b-17de-408a-b874-0445c86b69e6'
   storageBlobDataContributor: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 }
+
+var appPort = 8080
+
+// Allow rules only: with any allow rule present, everything else is denied.
+var cloudflareRestrictions = [for (range, i) in cloudflareIpv4Ranges: {
+  name: 'cloudflare-${i}'
+  description: 'Cloudflare edge'
+  ipAddressRange: range
+  action: 'Allow'
+}]
+
+// Where visitors reach the app: the custom domain once it is bound, otherwise the generated host name.
+var generatedHost = '${names.containerApp}.${environment.properties.defaultDomain}'
+var publicHost = empty(customDomain) ? generatedHost : customDomain
 
 // Monitoring
 
@@ -176,7 +237,7 @@ resource deployerIndexUpload 'Microsoft.Authorization/roleAssignments@2022-04-01
   }
 }
 
-// Container registry. The web app pulls with its managed identity; the admin user stays off.
+// Container registry. The container app pulls with its user-assigned identity; the admin user stays off.
 
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: names.containerRegistry
@@ -224,114 +285,334 @@ resource mcpApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!e
   }
 }
 
-// App Service
+// Identity. One user-assigned identity serves the container app (image pull, Key Vault secret references) and
+// the Container Apps environment (importing the Origin CA certificate from Key Vault). Its roles are assigned
+// before either is created, which a system-assigned identity cannot do: that one only exists once the app does.
 
-resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
-  name: names.appServicePlan
+resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: names.identity
   location: location
   tags: allTags
-  kind: 'linux'
-  sku: {
-    name: appServicePlanSku
-  }
+}
+
+resource identityAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(registry.id, identity.id, roles.acrPull)
+  scope: registry
   properties: {
-    reserved: true
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.acrPull)
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
-resource webApp 'Microsoft.Web/sites@2023-12-01' = {
-  name: names.webApp
+resource identitySecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, identity.id, roles.keyVaultSecretsUser)
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.keyVaultSecretsUser)
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Container Apps environment on the Consumption workload profile. Console and system logs go to the same
+// Log Analytics workspace as Application Insights.
+
+resource environment 'Microsoft.App/managedEnvironments@2025-01-01' = {
+  name: names.containerEnvironment
   location: location
   tags: allTags
-  kind: 'app,linux,container'
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
   }
   properties: {
-    serverFarmId: plan.id
-    httpsOnly: true
-    clientAffinityEnabled: false
-    siteConfig: {
-      linuxFxVersion: 'DOCKER|${registry.properties.loginServer}/${imageName}:${imageTag}'
-      acrUseManagedIdentityCreds: true
-      alwaysOn: appServicePlanSku != 'F1'
-      healthCheckPath: '/healthz'
-      http20Enabled: true
-      ftpsState: 'Disabled'
-      minTlsVersion: '1.2'
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logAnalytics.properties.customerId
+        sharedKey: logAnalytics.listKeys().primarySharedKey
+      }
+    }
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
+  }
+  dependsOn: [
+    identitySecretsUser
+  ]
+}
+
+// The Cloudflare Origin CA certificate, imported into Key Vault with az keyvault certificate import before
+// customDomain is set. Container Apps keeps the environment copy in step when the vault certificate is renewed.
+resource originCertificate 'Microsoft.App/managedEnvironments/certificates@2025-01-01' = if (!empty(customDomain)) {
+  parent: environment
+  name: 'cert-${replace(customDomain, '.', '-')}'
+  location: location
+  tags: allTags
+  properties: {
+    certificateKeyVaultProperties: {
+      identity: identity.id
+      keyVaultUrl: '${keyVault.properties.vaultUri}secrets/${originCertificateName}'
     }
   }
 }
 
-resource webAppAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, webApp.id, roles.acrPull)
-  scope: registry
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.acrPull)
-    principalId: webApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
+// The app. Ingress is open to the internet by design, but allows only Cloudflare's addresses.
 
-resource webAppSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, webApp.id, roles.keyVaultSecretsUser)
-  scope: keyVault
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.keyVaultSecretsUser)
-    principalId: webApp.identity.principalId
-    principalType: 'ServicePrincipal'
+resource containerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployApp) {
+  name: names.containerApp
+  location: location
+  tags: allTags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identity.id}': {}
+    }
   }
-}
-
-// The template owns the app settings: a redeploy replaces settings changed in the portal.
-resource appSettings 'Microsoft.Web/sites/config@2023-12-01' = {
-  parent: webApp
-  name: 'appsettings'
-  properties: union(
-    {
-      WEBSITES_PORT: '8080'
-      WEBSITES_ENABLE_APP_SERVICE_STORAGE: 'false'
-      Index__Url: '${storage.properties.primaryEndpoints.blob}${indexContainer.name}/'
-      Ui__PublicUrl: 'https://${webApp.properties.defaultHostName}'
-      Embeddings__Endpoint: embeddingsEndpoint
-      AI_API_KEY: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=${aiApiKeySecret.name})'
-      APPLICATIONINSIGHTS_CONNECTION_STRING: appInsights.properties.ConnectionString
-    },
-    empty(mcpApiKey) ? {} : { Mcp__ApiKey: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=mcp-api-key)' },
-    empty(siteOrigin) ? {} : { SearchApi__AllowedOrigins__0: siteOrigin }
-  )
+  properties: {
+    managedEnvironmentId: environment.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: true
+        targetPort: appPort
+        transport: 'auto'
+        allowInsecure: false
+        ipSecurityRestrictions: lockIngressToCloudflare ? cloudflareRestrictions : []
+        customDomains: empty(customDomain) ? [] : [
+          {
+            name: customDomain
+            certificateId: originCertificate!.id
+            bindingType: 'SniEnabled'
+          }
+        ]
+      }
+      registries: [
+        {
+          server: registry.properties.loginServer
+          identity: identity.id
+        }
+      ]
+      // Key Vault references. The values never appear in the template or the app's configuration.
+      secrets: union(
+        [
+          {
+            name: 'ai-api-key'
+            keyVaultUrl: aiApiKeySecret.properties.secretUri
+            identity: identity.id
+          }
+        ],
+        empty(mcpApiKey) ? [] : [
+          {
+            name: 'mcp-api-key'
+            keyVaultUrl: mcpApiKeySecret!.properties.secretUri
+            identity: identity.id
+          }
+        ]
+      )
+    }
+    template: {
+      containers: [
+        {
+          name: 'server'
+          image: '${registry.properties.loginServer}/${imageName}:${imageTag}'
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+          env: union(
+            [
+              { name: 'Index__Url', value: '${storage.properties.primaryEndpoints.blob}${indexContainer.name}/' }
+              { name: 'Ui__PublicUrl', value: 'https://${publicHost}' }
+              { name: 'Embeddings__Endpoint', value: embeddingsEndpoint }
+              { name: 'AI_API_KEY', secretRef: 'ai-api-key' }
+              { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
+            ],
+            empty(mcpApiKey) ? [] : [{ name: 'Mcp__ApiKey', secretRef: 'mcp-api-key' }],
+            empty(siteOrigin) ? [] : [{ name: 'SearchApi__AllowedOrigins__0', value: siteOrigin }],
+            logBodies ? [{ name: 'Telemetry__LogBodies', value: 'true' }] : []
+          )
+          probes: [
+            {
+              type: 'Startup'
+              httpGet: { path: '/healthz', port: appPort }
+              initialDelaySeconds: 2
+              periodSeconds: 5
+              timeoutSeconds: 3
+              // The platform allows at most 10 failures: 50 seconds to load the index before a restart.
+              failureThreshold: 10
+            }
+            {
+              type: 'Liveness'
+              httpGet: { path: '/healthz', port: appPort }
+              periodSeconds: 30
+              timeoutSeconds: 5
+              failureThreshold: 3
+            }
+            {
+              type: 'Readiness'
+              httpGet: { path: '/healthz', port: appPort }
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+              successThreshold: 1
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: maxReplicas
+        rules: [
+          {
+            name: 'http-concurrency'
+            http: {
+              metadata: {
+                concurrentRequests: string(httpConcurrency)
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
   dependsOn: [
-    webAppSecretsUser
-    mcpApiKeySecret
+    identityAcrPull
+    identitySecretsUser
   ]
 }
 
-// Container output and HTTP logs, so a failed image pull or a startup error is visible in Log Analytics.
-resource webAppDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: 'to-log-analytics'
-  scope: webApp
+// Alerts
+
+resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (!empty(alertEmail)) {
+  name: names.actionGroup
+  location: 'global'
+  tags: allTags
   properties: {
-    workspaceId: logAnalytics.id
-    logs: [
+    groupShortName: take(workload, 12)
+    enabled: true
+    emailReceivers: [
       {
-        category: 'AppServiceConsoleLogs'
-        enabled: true
-      }
-      {
-        category: 'AppServiceHTTPLogs'
-        enabled: true
-      }
-      {
-        category: 'AppServicePlatformLogs'
-        enabled: true
+        name: 'owner'
+        emailAddress: alertEmail
+        useCommonAlertSchema: true
       }
     ]
   }
 }
 
-output webAppName string = webApp.name
-output webAppUrl string = 'https://${webApp.properties.defaultHostName}'
-output mcpEndpoint string = 'https://${webApp.properties.defaultHostName}/mcp'
+var alertActions = empty(alertEmail) ? [] : [{ actionGroupId: actionGroup!.id }]
+
+resource alert5xx 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployApp) {
+  name: '${names.alertPrefix}-5xx'
+  location: 'global'
+  tags: allTags
+  properties: {
+    description: 'The server answered more than 5 requests with a 5xx status in 5 minutes.'
+    severity: 2
+    enabled: true
+    scopes: [containerApp!.id]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    autoMitigate: true
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          name: 'server-errors'
+          criterionType: 'StaticThresholdCriterion'
+          metricNamespace: 'microsoft.app/containerapps'
+          metricName: 'Requests'
+          dimensions: [
+            {
+              name: 'statusCodeCategory'
+              operator: 'Include'
+              values: ['5xx']
+            }
+          ]
+          operator: 'GreaterThan'
+          threshold: 5
+          timeAggregation: 'Total'
+        }
+      ]
+    }
+    actions: alertActions
+  }
+}
+
+resource alertRestarts 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployApp) {
+  name: '${names.alertPrefix}-restarts'
+  location: 'global'
+  tags: allTags
+  properties: {
+    description: 'A replica has restarted since it was created: failing liveness probes, crashes and out-of-memory kills all count. RestartCount is cumulative, so this stays active until the replica is replaced, for example by the next deployment.'
+    severity: 2
+    enabled: true
+    scopes: [containerApp!.id]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    autoMitigate: true
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          name: 'restarts'
+          criterionType: 'StaticThresholdCriterion'
+          metricNamespace: 'microsoft.app/containerapps'
+          metricName: 'RestartCount'
+          operator: 'GreaterThan'
+          threshold: 0
+          timeAggregation: 'Maximum'
+        }
+      ]
+    }
+    actions: alertActions
+  }
+}
+
+resource alertNoReplicas 'Microsoft.Insights/metricAlerts@2018-03-01' = if (deployApp) {
+  name: '${names.alertPrefix}-no-replicas'
+  location: 'global'
+  tags: allTags
+  properties: {
+    description: 'No replica is running. The app keeps at least one, so zero means it is down.'
+    severity: 1
+    enabled: true
+    scopes: [containerApp!.id]
+    evaluationFrequency: 'PT1M'
+    windowSize: 'PT5M'
+    autoMitigate: true
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          name: 'replicas'
+          criterionType: 'StaticThresholdCriterion'
+          metricNamespace: 'microsoft.app/containerapps'
+          metricName: 'Replicas'
+          operator: 'LessThan'
+          threshold: 1
+          timeAggregation: 'Minimum'
+        }
+      ]
+    }
+    actions: alertActions
+  }
+}
+
+output containerAppName string = deployApp ? containerApp!.name : ''
+output containerAppFqdn string = deployApp ? containerApp!.properties.configuration.ingress.fqdn : ''
+output environmentDefaultDomain string = environment.properties.defaultDomain
+output customDomainVerificationId string = environment.properties.customDomainConfiguration.customDomainVerificationId
+output publicUrl string = 'https://${publicHost}'
+output mcpEndpoint string = 'https://${publicHost}/mcp'
 output containerRegistryName string = registry.name
 output storageAccountName string = storage.name
 output indexUrl string = '${storage.properties.primaryEndpoints.blob}${indexContainer.name}/'
