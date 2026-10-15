@@ -21,7 +21,7 @@ namespace McpMySite.Tests.Server;
 internal static class LoggedServer
 {
     public static async Task<(WebApplicationFactory<server::Program> Factory, HttpClient Client)> StartAsync(
-        CapturedLogs logs, Dictionary<string, string?> settings, Dictionary<string, string?>? hostSettings = null)
+        CapturedLogs logs, Dictionary<string, string?> settings, Dictionary<string, string?>? hostSettings = null, Action<IServiceCollection>? configureServices = null)
     {
         var index = await TestIndex.WriteAsync(IndexFormat.JsonStoreType);
         var factory = new WebApplicationFactory<server::Program>().WithWebHostBuilder(builder =>
@@ -40,6 +40,7 @@ internal static class LoggedServer
                 ["Embeddings:ApiKeyEnvironmentVariable"] = "MCPMYSITE_TEST_KEY_THAT_IS_NOT_SET",
             }));
             builder.ConfigureLogging(logging => logging.AddProvider(logs));
+            builder.ConfigureServices(services => configureServices?.Invoke(services));
         });
 
         var client = factory.CreateClient();
