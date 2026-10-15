@@ -286,7 +286,7 @@ setx AI_API_KEY sk-...
 ```
 
 In CI, store it as a secret and expose it as an environment variable for the build step (section 10.3).
-On Azure Container Apps, store it as a secret or a Key Vault reference (section 10.2).
+On a hosting platform, use its secret store rather than a plain value in a script (section 10.2).
 
 Never put the key in `appsettings.json` or source control. If you prefer to keep it in configuration
 rather than a named variable, use the standard .NET layers that stay out of the repository: the
@@ -690,13 +690,13 @@ variables win over the file. All settings are read at startup; restart after cha
 | `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
 | `Ui:StaleAfterDays` | `30` | The landing page and `/api/info` flag the index as stale when it is older than this. `0` turns the flag off. |
 | `RateLimiting:PermitPerMinute` | `60` | Requests per client IP per minute, shared across the MCP endpoint and the search API. Excess requests get `429`. |
-| `RateLimiting:UseForwardedHeaders` | `true` | Take the client IP from `X-Forwarded-For`, as set by the Azure Container Apps ingress and most reverse proxies. Set `false` when clients reach Kestrel directly. |
+| `RateLimiting:UseForwardedHeaders` | `true` | Take the client IP from `X-Forwarded-For`, as set by most reverse proxies and platform ingresses. Set `false` when clients reach Kestrel directly. |
 | `Cloudflare:TrustConnectingIp` | `true` | Behind Cloudflare, take the client IP from `CF-Connecting-IP` and tag requests with `CF-Ray` and `CF-IPCountry`. Only believed when the connection comes from `Cloudflare:TrustedNetworks`, so it is inert anywhere else. Section 7.6. |
 | `Cloudflare:TrustedNetworks` | Cloudflare's published ranges | CIDR ranges of the Cloudflare edge, IPv4 and IPv6, from <https://www.cloudflare.com/ips>. Shipped in `appsettings.json`; replace the list when Cloudflare publishes new ranges. |
 | `Telemetry:Exporter` | `Auto` | Where traces, metrics and logs are exported on top of the console log: `Auto` (Application Insights when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, otherwise OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, otherwise nowhere), `None`, `AzureMonitor` or `Otlp`. Section 7.10. |
 | `Telemetry:LogQueryText` | `false` | Include query text, request query strings, and fetch targets that match no page in logs and trace tags. Off by default because queries can carry personal data. |
 | `Telemetry:LogBodies` | `false` | Log the request and response bodies of `/mcp` and `/api/search`, capped at 8 KB, with an allowlist of headers and credentials masked. Includes what people search for. Section 7.10. |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | | Application Insights connection string. The Bicep template sets it. |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | | Application Insights connection string, for the optional Azure Monitor exporter. |
 | `AzureMonitor:*` | | Application Insights exporter options, such as `SamplingRatio`, `TracesPerSecond` and `EnableLiveMetrics` (section 7.10). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | | OTLP collector address. The other standard `OTEL_*` settings (protocol, headers, service name) apply too. |
 | `ASPNETCORE_URLS` | `http://localhost:5000` | Listening address, standard ASP.NET Core. The container sets port 8080. |
@@ -829,7 +829,7 @@ Every MCP and search request counts against a fixed one-minute window per client
 queued. `/healthz` and `/` are not limited.
 
 The client IP is taken from `X-Forwarded-For` when `RateLimiting:UseForwardedHeaders` is `true`
-(the default, right for Azure Container Apps and reverse proxies). Two mistakes to avoid:
+(the default, right behind a reverse proxy or a platform ingress). Two mistakes to avoid:
 
 - Behind a proxy with the setting `false`, every visitor shares the proxy's IP and they are all
   throttled together.
@@ -838,15 +838,15 @@ The client IP is taken from `X-Forwarded-For` when `RateLimiting:UseForwardedHea
 
 **Behind Cloudflare.** The caller of the server is then a Cloudflare edge address, and the visitor is
 in the `CF-Connecting-IP` header. The server reads it, but only when the connection comes from one of
-`Cloudflare:TrustedNetworks`. The check runs after forwarded headers are applied, so behind the
-Container Apps ingress the address compared with Cloudflare's ranges is the one the ingress saw.
+`Cloudflare:TrustedNetworks`. The check runs after forwarded headers are applied, so behind an
+ingress the address compared with Cloudflare's ranges is the one the ingress saw.
 A request from anywhere else keeps its own address, and its `CF-*` headers are ignored.
 
 The resolved address is what the rate limiter partitions on, so each visitor has their own window.
 The request's trace also gets `cloudflare.ray_id`, `cloudflare.country` and `client.address`
 (section 7.10), which lets a row in Application Insights be matched to the same request in the
 Cloudflare dashboards by Ray ID. This needs `RateLimiting:UseForwardedHeaders` at `true` when a
-proxy such as the Container Apps ingress sits between Cloudflare and the server. Set
+proxy such as a platform ingress sits between Cloudflare and the server. Set
 `Cloudflare:TrustConnectingIp` to `false` to turn it off.
 
 Being in Cloudflare's ranges shows that a request came through Cloudflare, not through your zone:
@@ -1041,8 +1041,7 @@ The indexer sends everything before it exits, so a CI run loses nothing. Give th
 
 #### Application Insights
 
-On Container Apps, the Bicep template sets `APPLICATIONINSIGHTS_CONNECTION_STRING`, and
-`Auto` picks it up. The exporter samples: it keeps up to five traces a second, and the logs written
+With `APPLICATIONINSIGHTS_CONNECTION_STRING` set, `Auto` picks it up. The exporter samples: it keeps up to five traces a second, and the logs written
 inside a trace it drops are dropped with it. To keep everything, set `AzureMonitor__SamplingRatio=1`
 and an empty `AzureMonitor__TracesPerSecond`. `AzureMonitor:*` takes the exporter's other options
 too, such as `EnableLiveMetrics=false`. The indexer always keeps its one trace per build.
@@ -1205,196 +1204,43 @@ Three patterns work; pick the one that matches how you deploy the site.
 Everything in the index is content that was public on the site anyway, so serving it from a public
 URL does not expose anything new.
 
-### 10.2 Azure Container Apps behind Cloudflare (reference deployment)
+### 10.2 Running the server
 
-#### With the Bicep template
-
-`deploy/azure/main.bicep` creates the whole setup in one resource group:
-
-- a Container Apps environment on the Consumption plan, and the server container in it with one
-  replica always running (0.25 vCPU, 0.5 GiB) and up to `maxReplicas` (default 2) when requests pile up;
-- a user-assigned managed identity that pulls from the Azure Container Registry and reads Key Vault;
-- a storage account with a public-read `index` container, a Key Vault holding the keys, and
-  Application Insights with a Log Analytics workspace that also receives the container logs;
-- ingress that accepts only Cloudflare's IPv4 ranges, and alerts for 5xx responses, restarts and a
-  missing replica.
-
-Names follow the Cloud Adoption Framework pattern, for example `ca-mcpmysite-prod-cac-x7k2` and
-`stmcpmysiteprodcacx7k2`; the 4-character suffix keeps globally unique names from colliding.
-
-The architecture document has a diagram of how the pieces connect (section 5.5).
-
-You need the Azure CLI, signed in with Owner (or Contributor plus User Access Administrator) on the
-resource group, because the template assigns roles, and a Cloudflare account with the domain's DNS
-zone. Run from the repository root, with a built index in `./index`. On a new resource group the
-first deployment leaves the app out (`deployApp=false`) because it cannot start before its image is in
-the registry. When the registry already holds the image and the index is uploaded, as when moving an
-existing deployment, skip step 1 and deploy with the defaults:
-
-```powershell
-$env:AI_API_KEY = "sk-..."
-# $env:MCP_API_KEY = "..."   # optional: require a key on the MCP endpoint
-
-az group create --name rg-mcpmysite-prod-cac --location canadacentral
-
-# 1. Everything except the app
-az deployment group create --resource-group rg-mcpmysite-prod-cac --template-file deploy/azure/main.bicep --parameters deploy/azure/main.bicepparam --parameters deployApp=false --query properties.outputs
-
-# 2. Build the server image in the registry and upload the index
-az acr build --registry <containerRegistryName> --image mcp-my-site:latest --file src/McpMySite.Server/Dockerfile .
-az storage blob upload-batch --account-name <storageAccountName> --destination index --source index --overwrite --auth-mode login
-
-# 3. Create the app
-az deployment group create --resource-group rg-mcpmysite-prod-cac --template-file deploy/azure/main.bicep --parameters deploy/azure/main.bicepparam --query properties.outputs
-```
-
-The names in angle brackets are in the deployment outputs. At this point the app is running but not
-reachable: ingress allows only Cloudflare, so the generated `containerAppFqdn` answers
-`403 RBAC: access denied` to everyone else, which is intended. To try the app before Cloudflare is
-set up, deploy once with `lockIngressToCloudflare=false`, and turn it back on afterwards.
-
-##### Cloudflare and the custom domain
-
-Cloudflare's own certificate cannot be used between Cloudflare and the origin, and Azure's free managed
-certificate cannot be issued behind a proxy, so the origin presents a **Cloudflare Origin CA
-certificate**: free, trusted only by Cloudflare, valid for up to 15 years, and the reason SSL/TLS mode
-can be **Full (strict)**.
-
-1. **Create the certificate.** Cloudflare dashboard, the zone, SSL/TLS, Origin Server, Create
-   Certificate. Choose RSA (2048) or ECDSA P-256, list `ai.example.com` (or your hostname), and keep
-   the key and PEM somewhere outside the repository. Convert them to a PFX and import it into Key
-   Vault under the name `origin-ca`:
-
-   ```bash
-   openssl pkcs12 -export -inkey origin.key -in origin.pem -out origin.pfx
-   az keyvault certificate import --vault-name <keyVaultName> --name origin-ca --file origin.pfx
-   ```
-
-   Importing needs a data-plane role the template does not grant to you, such as Key Vault
-   Certificates Officer. Delete the key, PEM and PFX when the import has succeeded; Key Vault is the
-   only copy that should remain.
-2. **Create the DNS records** in Cloudflare, with the proxy on (orange cloud):
-
-   | Type | Name | Content |
-   |---|---|---|
-   | `CNAME` | `ai` | `containerAppFqdn` from the outputs |
-   | `TXT` | `asuid.ai` | `customDomainVerificationId` from the outputs |
-
-   Binding the domain worked with the `CNAME` proxied. If the ownership check ever fails because
-   the proxy hides the target, switch the `CNAME` to DNS only (grey cloud) for the deployment and turn
-   the proxy back on afterwards.
-3. **Bind the domain** with a second deployment that sets `customDomain` (or set it in
-   `main.bicepparam`):
-
-   ```powershell
-   az deployment group create --resource-group rg-mcpmysite-prod-cac --template-file deploy/azure/main.bicep --parameters deploy/azure/main.bicepparam --parameters customDomain=ai.example.com
-   ```
-
-   The template registers the certificate in the environment from Key Vault and binds the domain
-   with SNI. `Ui__PublicUrl` becomes the custom domain, so links and the sitemap use it.
-4. **Set the origin SSL/TLS mode to Full (strict)** for the hostname. Check the zone's current mode
-   first (SSL/TLS, Overview). On Flexible, Cloudflare reaches the origin over HTTP, the container app
-   redirects to HTTPS, and visitors get a redirect loop. Changing the mode of a zone that serves other
-   sites can break them, so unless the whole zone should be Full (strict), add a Configuration Rule
-   that applies only to this hostname: Rules, Overview, Configuration Rules, Create rule, with the
-   expression `http.host eq "ai.example.com"` and the SSL setting set to **Strict**. The SSL
-   drop-down in the rule form starts at Off, so set it before deploying the rule.
-5. **Add rules.** The server already limits each client IP (`RateLimiting:PermitPerMinute`), and
-   behind Cloudflare that is the visitor's address (section 7.6). Cloudflare can stop abuse before it
-   reaches the container, so under Security, WAF add a rate limiting rule for the paths `/mcp` and
-   `/api/search`, and a custom rule that blocks or challenges requests to `/mcp` that are not
-   `POST`, `GET` or `DELETE`. The free plan limits how many rules and which options you get; check
-   your plan.
-6. **Smoke test through the domain:**
-
-   ```bash
-   curl -s https://ai.example.com/healthz
-   curl -s https://ai.example.com/mcp -H "Content-Type: application/json" \
-     -H "Accept: application/json, text/event-stream" \
-     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-   ```
-
-   Add `-H "X-Api-Key: <key>"` when you set `MCP_API_KEY`. `/healthz` should report the loaded index.
-7. **Check that the direct hostname is refused:**
-
-   ```bash
-   curl -i https://<containerAppFqdn>/healthz
-   ```
-
-   This must answer `403` with `RBAC: access denied`. A `200` means `lockIngressToCloudflare` is off.
-
-**Cloudflare timeout.** Cloudflare gives up on a request that has not started answering after 100
-seconds and returns `524`; that limit applies to the free plan and cannot be raised there. Searches
-and fetches take well under a second, so this only matters if you add long-running tools.
-
-- **Parameters.** `main.bicepparam` sets the workload and environment names and reads the keys from
-  the environment, so no secret is ever written to a file. Set `siteOrigin` there to allow the site's
-  search box, `alertEmail` to be notified by the alerts, and `customDomain` once the certificate is
-  in Key Vault. Others, with their defaults: `maxReplicas` (2), `httpConcurrency` (30 requests per
-  replica before scaling out), `logBodies` (false), `lockIngressToCloudflare` (true),
-  `cloudflareIpv4Ranges` (the list from <https://www.cloudflare.com/ips-v4>, last checked
-  2026-10-15; Container Apps ingress rules accept IPv4 only), `originCertificateName` (`origin-ca`).
-  See `main.bicep` for the rest (region code, embeddings endpoint, tags).
-- **Updating the index.** Re-run `upload-batch`. The server polls the manifest and swaps the new
-  index in without a restart.
-- **Updating the server.** Build with a new tag and deploy it, which creates a new revision:
-  `az acr build --image mcp-my-site:<tag> ...`, then deploy again with `imageTag=<tag>`. A rebuild
-  under the same tag `latest` does not start a new revision by itself.
-- **Settings are owned by the template.** A redeploy replaces environment variables and ingress rules
-  changed in the portal, so change them in the template or its parameters.
-- **Body logging.** `logBodies=true` sets `Telemetry__LogBodies` and sends request and response
-  bodies, search text included, to Application Insights (section 7.10). Turn it on to debug and off
-  again.
-- **Role propagation.** Role assignments can take a few minutes to apply. If the first upload is
-  refused or the app cannot read Key Vault, wait and retry.
-- **Probes.** The startup, liveness and readiness probes all call `/healthz`, which answers `503`
-  while no index is loaded. An app deployed before the first index upload is therefore restarted
-  repeatedly until the index is there. The startup probe waits up to 50 seconds for the first load.
-- **Restart alert.** It watches the cumulative `RestartCount` metric, so once a replica has restarted
-  the alert stays active until that replica is replaced, for example by the next deployment.
-- **Cloudflare ranges change rarely.** When Cloudflare publishes new ranges, update
-  `cloudflareIpv4Ranges` and redeploy, or visitors on the new ranges are refused. The server's own
-  trusted list (`Cloudflare:TrustedNetworks`) is in `appsettings.json`.
-- **Earlier App Service deployments.** The template no longer manages an App Service plan or web app.
-  Deploying it over a group created by the earlier version adds the Container Apps resources and
-  leaves the old plan and web app running; delete them yourself once the new hostname serves traffic.
-- **Starting over.** Deleting the resource group soft-deletes the key vault for 7 days. To redeploy
-  into a group with the same name within that time, purge it first with
-  `az keyvault purge --name <keyVaultName>`.
-
-#### With the Azure CLI only
-
-Push the image to a registry you control (Azure Container Registry or GitHub Container Registry),
-then:
+The server is a plain ASP.NET Core container with no dependency on any cloud platform. Build the image
+from `src/McpMySite.Server/Dockerfile` with the repository root as the build context, push it to a
+registry you control, and run it wherever you run containers: a VM with Docker, Kubernetes, or a
+managed container service.
 
 ```bash
-az group create --name mcp-my-site --location canadacentral
-az containerapp env create --resource-group mcp-my-site --name mcp-my-site-env --location canadacentral
-
-az containerapp create --resource-group mcp-my-site --name <app-name> --environment mcp-my-site-env \
-  --image ghcr.io/<you>/mcp-my-site:latest \
-  --ingress external --target-port 8080 \
-  --cpu 0.25 --memory 0.5Gi --min-replicas 1 --max-replicas 2 \
-  --secrets "ai-api-key=$AI_API_KEY" \
-  --env-vars Index__Url=https://example.com/index/ \
-    SearchApi__AllowedOrigins__0=https://example.com \
-    AI_API_KEY=secretref:ai-api-key \
-    APPLICATIONINSIGHTS_CONNECTION_STRING="<connection string>"
+docker build -f src/McpMySite.Server/Dockerfile -t mcp-my-site .
+docker run --rm -p 8080:8080 \
+  -e Index__Url=https://example.com/index/ \
+  -e Ui__PublicUrl=https://mcp.example.com \
+  -e AI_API_KEY \
+  mcp-my-site
 ```
 
-Notes:
+What the platform has to provide:
 
-- Container Apps ingress terminates TLS and sets `X-Forwarded-For`; keep
-  `RateLimiting:UseForwardedHeaders` at its default `true`.
-- Without Cloudflare in front, set `Cloudflare:TrustConnectingIp` to `false`; it does nothing for
-  callers outside Cloudflare's ranges but is clearer switched off.
-- Behind Cloudflare, restrict ingress with `az containerapp ingress access-restriction set` once per
-  Cloudflare range, as the template does, or anyone can reach the generated hostname directly.
-- Keep the key as a Container Apps secret (as above) or a Key Vault reference rather than a plain
-  value in a script that might be committed.
-- Add `Mcp__ApiKey` the same way if you want the MCP endpoint keyed.
-- Azure API Management in front is optional. It adds OAuth, quotas and analytics; the built-in rate
-  limit and API key, plus Cloudflare's rules, cover the small profile.
+- **Settings as environment variables**, named as in section 7.2. The ones almost every deployment
+  sets are `Index__Url` (or `Index__Path`), `Ui__PublicUrl`, `AI_API_KEY` and, to let the site's own
+  search box call the search API, `SearchApi__AllowedOrigins__0`. Add `Mcp__ApiKey` to key the MCP
+  endpoint.
+- **The key as a secret.** Use the platform's secret store, not a plain value in a script that might
+  be committed.
+- **Port 8080** (`ASPNETCORE_HTTP_PORTS`), with `/healthz` as the health probe. It answers `503`
+  while no index is loaded, so a probe restarts a replica that cannot reach its index. Allow it about
+  50 seconds to load the first time.
+- **TLS in front.** The server speaks plain HTTP. Terminate TLS at a reverse proxy, an ingress or a CDN.
+- **A client address.** Rate limiting needs each visitor's address, so the proxy must set
+  `X-Forwarded-For` (or set `RateLimiting:UseForwardedHeaders` to `false` when clients reach the server
+  directly). Behind Cloudflare, section 7.6 explains `CF-Connecting-IP`.
+- **One instance that stays up.** A cold start has to load the index first, which an agent would meet
+  as a slow or failed call, so avoid scaling to zero. The server is stateless: add instances freely,
+  each holds the index in memory.
+
+Nothing else is needed. The indexer runs elsewhere (section 10.3), and the server picks up a new index
+by polling its manifest.
 
 ### 10.3 Building the index in CI
 
@@ -1437,8 +1283,10 @@ jobs:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
         run: dotnet run --project .mcp-my-site/src/McpMySite.Indexer -c Release -- build --config mcp/appsettings.json
 
+      # Replace with the upload step of wherever the index is hosted (section 10.1). Copy the
+      # data files first and manifest.json last: the server reloads when the manifest changes.
       - name: Publish index
-        run: az storage blob upload-batch --account-name <account> --destination '$web/index' --source mcp/index --overwrite
+        run: ./publish-index.sh mcp/index
 ```
 
 The build step exits non-zero when a safety check fails, so a broken crawl stops the workflow before
@@ -1447,15 +1295,6 @@ the publish step and the server keeps serving the previous index.
 To see builds in Application Insights next to the server, add
 `APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}` to the
 build step's `env` (section 7.10). Add `--verbose` to the command when a crawl needs explaining.
-
-### 10.4 Other hosts
-
-The server is a plain ASP.NET Core container with no Azure dependency. Besides Azure Container
-Apps (section 10.2), it runs on AWS App Runner or ECS, Google Cloud Run, Fly.io, a VM with Docker,
-or Kubernetes. Give it the
-environment variables from section 7.2, expose port 8080, point `/healthz` at the platform's health
-probe, and make sure the platform sets `X-Forwarded-For` (or set `RateLimiting:UseForwardedHeaders`
-to `false`).
 
 ## 11. Operations
 
@@ -1471,7 +1310,7 @@ embedding automatically. The server's endpoint and key must be able to reach the
 
 **Scaling.** The server is stateless; run as many instances as you like. Each instance loads the index
 into memory, so size instances by index size rather than request volume. A few hundred pages fit
-comfortably in the default 0.5 GiB replica.
+comfortably in 0.5 GiB of memory.
 
 **Monitoring.** Watch `/healthz` for `503` and for a `lastError` that persists, the `fallback=true`
 share of `mcpmysite.search.requests` (your embedding provider is failing), `mcpmysite.index.age`
@@ -1502,7 +1341,8 @@ cost is the hosting plan.
   once, and lets you add a delay. Index only sites you own or are allowed to index.
 - **Forwarded headers.** See section 7.6. The one setting that can weaken the rate limit is trusting
   `X-Forwarded-For` when there is no proxy. Behind Cloudflare, `CF-Connecting-IP` is believed only
-  from Cloudflare's ranges, and the template refuses every other caller at the ingress.
+  from Cloudflare's ranges; also limit who can reach the origin to those ranges at your ingress or
+  firewall.
 - **Bodies in logs.** Off by default; when on, capped, header-allowlisted and credential-masked
   (section 7.10), but they hold what people searched for.
 - **Dependencies.** The server has no Azure dependency beyond the optional telemetry exporter; the
@@ -1693,7 +1533,7 @@ any load balancer.
 
 **How do I authenticate MCP clients?**
 V1 offers a static API key (`Mcp:ApiKey`) sent as a bearer token or `X-Api-Key` header, plus per-IP
-rate limiting for the public mode. OAuth is not built in; put Azure API Management or another gateway
+rate limiting for the public mode. OAuth is not built in; put an API gateway
 in front if you need it.
 
 **Can I change what the agent is told about the site?**
@@ -1726,8 +1566,8 @@ Not in V1. An OpenAI-compatible chat API (Chat Completions and Responses, stream
 Microsoft Agent Framework is planned for V2.
 
 **Does it need Azure?**
-No. Azure Container Apps behind Cloudflare is the reference deployment and Application Insights the default telemetry
-target, but the server is a plain container and exports over OTLP to anything.
+No. The server is a plain container that runs anywhere. Application Insights is one optional telemetry
+target; it also exports over OTLP to anything.
 
 **What licence?**
 MIT.

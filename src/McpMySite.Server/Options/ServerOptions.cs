@@ -74,7 +74,7 @@ public sealed class RateLimitOptions
     /// <summary>Requests allowed per client IP per minute across the MCP and search endpoints.</summary>
     public int PermitPerMinute { get; set; } = 60;
 
-    /// <summary>Trust X-Forwarded-For from a reverse proxy such as Azure App Service when resolving the client IP.</summary>
+    /// <summary>Trust X-Forwarded-For from a reverse proxy or platform ingress when resolving the client IP.</summary>
     public bool UseForwardedHeaders { get; set; } = true;
 }
 
