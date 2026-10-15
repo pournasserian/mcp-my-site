@@ -329,7 +329,7 @@ low-text pages and the content-selection strategy per page; it is the diagnostic
 ```mermaid
 flowchart TB
     subgraph Pipeline["ASP.NET Core pipeline"]
-        FH["Forwarded headers"] --> CORS["CORS<br/>per-endpoint policies"] --> RL["Rate limiter<br/>fixed window per client IP"] --> Key["API key check<br/>MCP path only, when configured"]
+        FH["Forwarded headers"] --> CFIP["Cloudflare client IP<br/>CF-Connecting-IP, only from Cloudflare ranges"] --> BL["Body logging<br/>Telemetry:LogBodies, off by default"] --> CORS["CORS<br/>per-endpoint policies"] --> RL["Rate limiter<br/>fixed window per client IP"] --> Key["API key check<br/>MCP path only, when configured"]
     end
     Key --> MCP["MapMcp<br/>ModelContextProtocol.AspNetCore<br/>stateless"]
     Key --> SAPI["GET /api/search<br/>minimal API"]
@@ -366,6 +366,8 @@ flowchart TB
 | `LlmsTxt` | Builds `/llms.txt` from every page of the loaded store, grouped by the manifest's sections, and caches it per index build and base URL. |
 | `PlaygroundPage` | The MCP playground: a server-rendered page whose inline script is a minimal Streamable HTTP client (initialize, tools/list, tools/call), with forms generated from input schemas. It writes server data with `textContent` only. |
 | `PageEndpoints`, `LandingPage`, `PageShell` | The landing page as a Razor component rendered on the server through `RazorComponentResult`, plus `robots.txt` and `sitemap.xml`. `PageShell` holds the document head (description, canonical, Open Graph, schema.org) and the inlined styles. |
+| `CloudflareClientIpMiddleware` | Behind Cloudflare, replaces the connection's remote address with `CF-Connecting-IP` when the caller is inside `Cloudflare:TrustedNetworks`, and tags the request's Activity with `cloudflare.ray_id`, `cloudflare.country` and `client.address`. A pass-through otherwise. |
+| `BodyLoggingMiddleware`, `SecretRedactor` | Opt-in (`Telemetry:LogBodies`) logging of `/mcp` and `/api/search` bodies: wraps the request and response streams so bytes are copied, up to 8 KB, as they pass and never held back; allowlisted headers; credentials masked. |
 | `ServerDiagnostics`, `TelemetrySetup` | The server's ActivitySource, Meter and instruments; OpenTelemetry registration, the exporter choice and the flush on shutdown. |
 | `Program` | Wiring: options, CORS policies bound from options, rate limiter partitioned by IP, API key middleware, request logging, telemetry, endpoints, the startup summary line. |
 
@@ -443,12 +445,71 @@ URL, look the page up in the store, return its Markdown and metadata, or a tool 
 
 - **Rate limiting** partitions a fixed one-minute window by client IP across MCP and search API.
   `/healthz` is outside the limiter so platform probes never trip it.
-- **Forwarded headers** are trusted by default (App Service and reverse proxies set them); the
-  setting exists to turn that off when Kestrel is exposed directly.
+- **Forwarded headers** are trusted by default (the Container Apps ingress and reverse proxies set
+  them); the setting exists to turn that off when Kestrel is exposed directly.
+- **Cloudflare client IP.** Behind Cloudflare the caller is an edge address. After forwarded headers,
+  `CloudflareClientIpMiddleware` accepts `CF-Connecting-IP` only when the caller is inside
+  `Cloudflare:TrustedNetworks` and writes it to the connection's remote address, so the rate limiter,
+  which partitions on that address, needs no change. A request from elsewhere keeps its address and
+  its `CF-*` headers are ignored. The ranges prove the request came through Cloudflare, not through
+  this deployment's zone; the ingress allow-list narrows who can reach the server at all.
+- **Body logging** is a middleware in front of CORS and the limiter, so rejected requests are
+  logged too, with whatever body the handler read. It is off unless `Telemetry:LogBodies` is set.
 - **API key** is a tiny middleware on the MCP path only, comparing in constant time. The search API is
   intentionally keyless because it is called from browsers.
 - **CORS** policies always exist and are bound from options at run time; an empty origin list simply
   allows no browser origin.
+
+### 5.5 Hosting
+
+The reference deployment (`deploy/azure/main.bicep`) runs the server container on Azure Container
+Apps, on the Consumption plan, with Cloudflare as the only way in.
+
+```mermaid
+flowchart LR
+    V["MCP clients, browsers"] --> CF["Cloudflare<br/>proxied DNS, WAF and rate rules<br/>SSL Full (strict)"]
+    CF -- "TLS with Origin CA certificate<br/>ingress allows Cloudflare IPv4 only" --> CA
+
+    subgraph Azure["Resource group"]
+        subgraph CAE["Container Apps environment, Consumption"]
+            CA["Container app<br/>1 to N replicas, 0.25 vCPU, 0.5 GiB<br/>HTTP concurrency scaling"]
+        end
+        ID["User-assigned identity<br/>AcrPull, Key Vault Secrets User"]
+        ACR["Container Registry"]
+        KV["Key Vault<br/>API keys, Origin CA certificate"]
+        ST["Storage, index container"]
+        AI["Application Insights"]
+        LA["Log Analytics"]
+        AL["Alert rules<br/>5xx, restarts, replicas at 0"]
+    end
+
+    ID -. "assigned to" .-> CA
+    CA -- "image pull" --> ACR
+    CA -- "secret references" --> KV
+    CAE -- "Origin CA certificate" --> KV
+    CA -- "polls manifest" --> ST
+    CA -- "query embeddings" --> Embed["Embeddings endpoint"]
+    CA -- "traces, metrics, logs" --> AI --> LA
+    CAE -- "console and system logs" --> LA
+    AL -. "watch" .-> CA
+```
+
+- **Why Cloudflare is in front.** It supplies the domain, the WAF, edge rate rules and DDoS
+  absorption, which a small container should not have to provide. The server stays unaware of it
+  except for the client address and the Ray ID (section 5.4).
+- **Closing the side door.** The generated `azurecontainerapps.io` host name resolves from anywhere, so
+  ingress accepts only Cloudflare's IPv4 ranges (`lockIngressToCloudflare`). Container Apps ingress
+  rules take IPv4 only, and the app's public address is IPv4, so Cloudflare reaches it from its IPv4 ranges.
+- **Certificates.** Cloudflare to origin uses a Cloudflare Origin CA certificate held in Key Vault and
+  registered in the environment, bound with SNI. Azure's managed certificate cannot be issued behind
+  the proxy. Rotating the Key Vault certificate updates the environment copy by itself.
+- **One identity.** The container app and the environment share a user-assigned identity, created
+  with its roles before either, so the image pull and the Key Vault references work on the first
+  start.
+- **Never scales to zero.** One replica always runs: a cold start has to load the index first, and an agent
+  would meet that as a slow or failed MCP call. The probes all use `/healthz`.
+- **Free plan limit.** Cloudflare's free plan cuts a request that is not answered within 100 seconds
+  (`524`). Search and fetch answer in well under a second.
 
 ## 6. Index format and compatibility
 
@@ -489,7 +550,9 @@ OpenTelemetry, chosen by `Telemetry:Exporter` and resolved in Core (`TelemetryEx
 read the same settings the same way: Azure Monitor when its connection string is present, otherwise
 OTLP when an endpoint is configured, unless set explicitly. Both flush exporters before their
 container is disposed, because the exporters' HTTP clients come from it. Query text is excluded unless
-explicitly enabled.
+explicitly enabled. Behind Cloudflare each request span also carries the Ray ID, the visitor's country
+and client address, so a row in Application Insights joins the Cloudflare dashboards by Ray ID;
+`Telemetry:LogBodies` adds opt-in request and response bodies, capped and redacted.
 
 **Error philosophy.** Build time fails closed: any doubt about the crawl stops the publish. Query
 time fails open: a missing embedding degrades to keyword search rather than an error, and a bad new
@@ -508,6 +571,9 @@ endpoint and metrics).
 | Automatic content selection, no selectors | Per-site CSS selector overrides | Nothing to maintain or break on redesigns; the report shows what was picked |
 | Full rebuild with an embedding cache | Incremental crawl with change detection | Deleted pages vanish for free; the cache removes most of the cost of a full rebuild |
 | Markdown as the stored format | HTML, plain text | Readable by models and humans, keeps structure, small |
+| Azure Container Apps (Consumption, one replica always on) behind Cloudflare | App Service, with or without API Management | Pay for 0.25 vCPU, not a plan; scales out on HTTP concurrency; revisions and secret references built in; Cloudflare supplies the domain, WAF and edge rules |
+| Origin CA certificate and an ingress allow-list | A shared secret header checked by the server, Authenticated Origin Pulls | No server code and nothing to rotate in the app; the allow-list stops the generated host name being used to bypass Cloudflare |
+| Trust `CF-Connecting-IP` only from Cloudflare ranges | Trust it always, or trust only `X-Forwarded-For` | Anyone can send the header, and behind a proxy every visitor would otherwise share one address |
 | Chunks carry title and heading path | Bare text chunks | Headings disambiguate short sections and improve recall on section-level questions |
 | Per-IP fixed-window rate limit built in | Rely on a gateway | Works everywhere the container runs; a gateway (APIM) can still sit in front |
 | Fail closed on build, fail open on query | Fail open everywhere, or fail closed everywhere | A broken index is worse than a stale one; a degraded answer is better than no answer |
@@ -537,7 +603,7 @@ endpoint and metrics).
 | Search primitives | Tokenizer, BM25 ordering, vector maths, rank fusion, snippets, URL keys, manifest validation | Plain unit tests |
 | Stores | Write then reopen, hybrid ranking, vector-only matches, keyword-only mode, page lookup tolerance, corrupt file rejection, FTS injection safety | One theory per behaviour, run against both store types |
 | Indexer | Content selection branches, metadata resolution, title suffix stripping, chunk paths and splitting, globs, robots.txt parsing, folder URL mapping, crawl URL normalisation and link extraction, site outline, configuration layering | Unit tests with inline HTML and Markdown fixtures |
-| Server | Health, search API (including CORS and validation), MCP tool listing, `search` then `fetch` round trip, tool errors, instructions from the manifest, API key enforcement, loader hot swap and URL loading | The real app booted in-process with `WebApplicationFactory`; a throwaway static-file host for the URL loader |
+| Server | Health, search API (including CORS and validation), MCP tool listing, `search` then `fetch` round trip, tool errors, instructions from the manifest, API key enforcement, loader hot swap and URL loading, client IP resolution behind Cloudflare, body logging with its cap, redaction and streaming | The real app booted in-process with `WebApplicationFactory`; a throwaway static-file host for the URL loader |
 
 Deliberately not covered by automated tests: live crawling of a real site and the embedding provider.
 The manual check is the `mcpmysite search` command against a freshly built index, plus
@@ -572,9 +638,11 @@ src/
     Index/                         IndexHolder, IndexLoader, IndexRefreshService
     Search/                        SiteSearchService
     Telemetry/                     ServerDiagnostics, TelemetrySetup
+    Requests/                      CloudflareClientIpMiddleware, BodyLoggingMiddleware, SecretRedactor
     Mcp/                           SiteTools
     Api/                           SearchEndpoints
     appsettings.json, Dockerfile
+deploy/azure/                      main.bicep (Container Apps behind Cloudflare), main.bicepparam
 tests/
   McpMySite.Tests/                 Core/, Indexer/, Server/, TestIndex (fixture builder), CapturedLogs, FakeCollector
 docs/

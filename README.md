@@ -71,7 +71,7 @@ Other clients (VS Code, Cursor, Claude Desktop) are in
 | `src/McpMySite.Indexer` | The `mcpmysite` CLI: crawl, extract, chunk, embed, write |
 | `src/McpMySite.Server` | ASP.NET Core app: MCP endpoint, search API, index loading, telemetry |
 | `tests/McpMySite.Tests` | Unit and integration tests |
-| `deploy/azure` | Bicep template for Azure App Service ([user guide 10.2](docs/user-guide.md#102-azure-app-service-reference-deployment)) |
+| `deploy/azure` | Bicep template for Azure Container Apps behind Cloudflare ([user guide 10.2](docs/user-guide.md#102-azure-container-apps-behind-cloudflare-reference-deployment)) |
 
 ```bash
 dotnet build
