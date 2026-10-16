@@ -39,14 +39,18 @@ OpenAI-compatible embeddings endpoint: OpenRouter by default, or
 never written to a file.
 
 ```bash
-git clone https://github.com/pournasserian/mcp-my-site.git
-cd mcp-my-site
+dotnet tool install --global mcpmysite
 export AI_API_KEY=sk-...
-dotnet run --project src/McpMySite.Indexer -- init https://example.com       # writes appsettings.json
-dotnet run --project src/McpMySite.Indexer -- build                          # crawls the site into ./index
-dotnet run --project src/McpMySite.Indexer -- search "how can I contact you" # checks the index
-Index__Path=index dotnet run --project src/McpMySite.Server
+mcpmysite init https://example.com         # writes appsettings.json
+mcpmysite build                            # crawls the site into ./index
+mcpmysite search "how can I contact you"   # checks the index
+docker run --rm -p 5000:8080 -v "$PWD/index:/index:ro" -e Index__Path=/index -e AI_API_KEY ghcr.io/pournasserian/mcp-my-site:latest
 ```
+
+Without Docker, clone the repository and run the server from source with
+`Index__Path=index dotnet run --project src/McpMySite.Server` from the clone, or publish it
+([user guide](docs/user-guide.md#3-installation)). The indexer also runs from a clone as
+`dotnet run --project src/McpMySite.Indexer -- ...`, which is how to try unreleased changes.
 
 The server is now at `http://localhost:5000`: `/mcp` for agents, `/playground` to try it in the
 browser, `/api/search?q=contact` for JSON, `/healthz` for the loaded index.

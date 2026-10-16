@@ -94,17 +94,26 @@ dotnet run --project src/McpMySite.Server
 
 ### 3.2 The indexer as a .NET tool
 
-The indexer packs as a .NET tool named `mcpmysite`. Until it is published on NuGet.org, pack it
-yourself and install from the local package folder:
+The indexer is published on NuGet.org as the .NET tool
+[`mcpmysite`](https://www.nuget.org/packages/mcpmysite). Every release is pushed there, so you do
+not need a clone of the repository to use it:
+
+```bash
+dotnet tool install --global mcpmysite
+mcpmysite --version
+```
+
+To update, `dotnet tool update --global mcpmysite`. To remove it, `dotnet tool uninstall --global mcpmysite`.
+
+To run changes that are not released yet, pack the tool from your clone and install from the local
+package folder instead:
 
 ```bash
 dotnet pack src/McpMySite.Indexer -c Release -o ./nupkg
 dotnet tool install --global mcpmysite --add-source ./nupkg
-mcpmysite --version
 ```
 
-To update after pulling new changes, pack again and run `dotnet tool update --global mcpmysite --add-source ./nupkg`.
-To remove it, `dotnet tool uninstall --global mcpmysite`.
+After pulling new changes, pack again and run `dotnet tool update --global mcpmysite --add-source ./nupkg`.
 
 The rest of this guide writes `mcpmysite ...`. If you did not install the tool, replace it with
 `dotnet run --project src/McpMySite.Indexer --` (note the trailing `--`).

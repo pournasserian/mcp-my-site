@@ -6,6 +6,11 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Release workflow that publishes the indexer to NuGet.org as the .NET tool `mcpmysite` on every
+  version tag, so it installs with `dotnet tool install --global mcpmysite`.
+
 ## [0.1.1] - 2026-10-16
 
 ### Added
