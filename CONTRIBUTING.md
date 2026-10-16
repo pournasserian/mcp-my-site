@@ -41,6 +41,27 @@ SQLite tests fail with `DllNotFoundException`.
 Commits are short and imperative ("Add FTS5 injection test"). `master` is protected and only
 changes through pull requests.
 
+## Releases and the MCP registry listing
+
+A release is a pull request that bumps `Version` in `Directory.Build.props`, moves the **Unreleased**
+changelog entries under the new version and sets the same number in `server.json`, both as `version`
+and as the image tag in `packages[0].identifier`. After the merge, pushing the `vX.Y.Z` tag publishes
+the server image to GHCR and the indexer to NuGet.org.
+
+`server.json` is the project's entry in the [MCP registry](https://registry.modelcontextprotocol.io),
+which stores metadata only. The image on GHCR carries the `io.modelcontextprotocol.server.name` label
+set in the Dockerfile, and that label is what proves the listing belongs to this repository; CI checks
+that the label, the name and the versions agree. Once the release image is on GHCR, the owner
+publishes the new version from the repository root with
+[`mcp-publisher`](https://github.com/modelcontextprotocol/registry/blob/main/docs/reference/cli/commands.md):
+
+```bash
+mcp-publisher login github
+mcp-publisher publish
+```
+
+A published version cannot be changed, so a correction after publishing needs a new version.
+
 ## What not to commit
 
 `.env` files, API keys, built indexes and anything under `index/`. The `.gitignore` covers these,
