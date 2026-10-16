@@ -12,9 +12,13 @@ on:
         required: true
         type: string
 
-# The push goes to NuGet.org with its own API key, so the GitHub token stays read-only.
+# NuGet.org trusts this workflow through a Trusted Publishing policy (owner tajan, repository
+# pournasserian/mcp-my-site, file release-nuget.yml): the job presents GitHub's OIDC token and gets
+# a one-hour API key back, so there is no long-lived NuGet key to store or rotate. The id-token
+# permission is what lets the job request that token; the GitHub token itself stays read-only.
 permissions:
   contents: read
+  id-token: write
 
 # Two runs for the same tag would race to push the same package, so they queue instead.
 concurrency:
@@ -60,6 +64,14 @@ jobs:
       - name: Pack
         run: dotnet pack src/McpMySite.Indexer --configuration Release --no-build --output nupkg -p:Version=${{ steps.version.outputs.version }}
 
+      # The user is the nuget.org profile name that owns the policy, not an email address. The key
+      # it returns is valid for an hour, which is why the login sits right before the push.
+      - name: NuGet login
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: tajan
+
       # --skip-duplicate makes a rerun of an already published version a no-op instead of a failure.
       - name: Push to NuGet.org
-        run: dotnet nuget push nupkg/mcpmysite.${{ steps.version.outputs.version }}.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push nupkg/mcpmysite.${{ steps.version.outputs.version }}.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
