@@ -77,3 +77,30 @@ jobs:
           docker logs smoke
           docker rm --force smoke
           [ "$status" = "503" ]
+
+  commit-messages:
+    name: Commit messages
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # The project has one author. Commits and PR descriptions must not credit an AI tool.
+      - name: Reject AI attribution
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          pattern='co-authored-by:.*(claude|anthropic|copilot|openai|chatgpt)|generated with.*(claude|copilot|chatgpt)'
+          if git log --format='%H %s%n%b' "$BASE..$HEAD" | grep -i -E "$pattern"; then
+            echo "::error::A commit message carries AI attribution. Amend it before merging."
+            exit 1
+          fi
+          if printf '%s' "$PR_BODY" | grep -i -q -E "$pattern"; then
+            echo "::error::The pull request description carries AI attribution. Edit it before merging."
+            exit 1
+          fi
