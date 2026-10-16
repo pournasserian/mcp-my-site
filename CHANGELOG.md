@@ -10,6 +10,8 @@ All notable changes to this project are recorded here. The format follows
 
 - Release workflow that publishes the server image to GitHub Container Registry as
   `ghcr.io/pournasserian/mcp-my-site` on every version tag.
+- The server image is built for `linux/arm64` as well as `linux/amd64`, cross-compiled by the SDK
+  rather than emulated.
 
 ## [0.1.0] - 2026-10-16
 
