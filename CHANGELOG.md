@@ -6,6 +6,10 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-16
+
+First public release.
+
 ### Added
 
 - Indexer CLI (`init`, `build`, `search`) that crawls a site, extracts and chunks the text, embeds
@@ -22,4 +26,5 @@ All notable changes to this project are recorded here. The format follows
 - Dockerfile for the server and a CI workflow that builds and tests on Linux and Windows.
 - README, user guide and architecture documentation.
 
-[Unreleased]: https://github.com/pournasserian/mcp-my-site/commits/master
+[Unreleased]: https://github.com/pournasserian/mcp-my-site/compare/v0.1.0...master
+[0.1.0]: https://github.com/pournasserian/mcp-my-site/releases/tag/v0.1.0
