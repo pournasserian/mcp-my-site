@@ -54,15 +54,16 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
-      # amd64 only: .NET does not build reliably under QEMU, and the Dockerfile compiles inside the
-      # container, so arm64 needs either a native arm64 runner or a cross-compiling Dockerfile.
+      # Both architectures come out of one amd64 run: the Dockerfile compiles on the build platform
+      # and the SDK cross-compiles for the target, so no QEMU emulation of .NET is needed (only the
+      # runtime image is pulled per platform, which needs no emulation to assemble).
       # Provenance is off because the attestation shows up as an extra "unknown/unknown" entry on
       # the package page.
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: src/McpMySite.Server/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           provenance: false
           tags: ${{ steps.meta.outputs.tags }}

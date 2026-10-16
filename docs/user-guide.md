@@ -134,7 +134,8 @@ docker run --rm -p 8080:8080 \
   mcp-my-site
 ```
 
-The image listens on port 8080 and runs as a non-root user.
+The image listens on port 8080 and runs as a non-root user. It is published for `linux/amd64` and
+`linux/arm64`, so the same tag works on Intel and ARM hosts such as Apple Silicon or Raspberry Pi.
 
 ## 4. Quick start
 
