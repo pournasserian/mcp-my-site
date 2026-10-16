@@ -1210,10 +1210,22 @@ URL does not expose anything new.
 
 ### 10.2 Running the server
 
-The server is a plain ASP.NET Core container with no dependency on any cloud platform. Build the image
-from `src/McpMySite.Server/Dockerfile` with the repository root as the build context, push it to a
-registry you control, and run it wherever you run containers: a VM with Docker, Kubernetes, or a
-managed container service.
+The server is a plain ASP.NET Core container with no dependency on any cloud platform. The published
+image can be deployed as it is: point your platform at `ghcr.io/pournasserian/mcp-my-site` (section
+3.4), which is public and needs no registry credentials. Pin a version tag in production rather than
+`latest`, so a release does not change what runs until you choose to upgrade.
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e Index__Url=https://example.com/index/ \
+  -e Ui__PublicUrl=https://mcp.example.com \
+  -e AI_API_KEY \
+  ghcr.io/pournasserian/mcp-my-site:0.1.0
+```
+
+To build it yourself instead, build the image from `src/McpMySite.Server/Dockerfile` with the
+repository root as the build context, push it to a registry you control, and run it wherever you run
+containers: a VM with Docker, Kubernetes, or a managed container service.
 
 ```bash
 docker build -f src/McpMySite.Server/Dockerfile -t mcp-my-site .
