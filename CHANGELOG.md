@@ -6,6 +6,8 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-16
+
 ### Added
 
 - Keyword-only mode: `mcpmysite init <url> --keyword-only` (or `Embeddings:Enabled` set to `false`)
@@ -44,6 +46,7 @@ First public release.
 - Dockerfile for the server and a CI workflow that builds and tests on Linux and Windows.
 - README, user guide and architecture documentation.
 
-[Unreleased]: https://github.com/pournasserian/mcp-my-site/compare/v0.1.1...master
+[Unreleased]: https://github.com/pournasserian/mcp-my-site/compare/v0.1.2...master
+[0.1.2]: https://github.com/pournasserian/mcp-my-site/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/pournasserian/mcp-my-site/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/pournasserian/mcp-my-site/releases/tag/v0.1.0
