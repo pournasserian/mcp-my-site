@@ -12,6 +12,8 @@ All notable changes to this project are recorded here. The format follows
   builds an index without vectors, so a first try needs no embeddings provider or API key. The
   manifest records it, and the server serves such an index from keyword search and says so on the
   landing page, in `/healthz` and `/api/info`, and in the `search` tool description.
+- Release workflow that publishes the indexer to NuGet.org as the .NET tool `mcpmysite` on every
+  version tag, so it installs with `dotnet tool install --global mcpmysite`.
 
 ## [0.1.1] - 2026-10-16
 

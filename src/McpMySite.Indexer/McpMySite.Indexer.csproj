@@ -10,6 +10,16 @@
     <UserSecretsId>mcpmysite-indexer</UserSecretsId>
   </PropertyGroup>
 
+  <!-- NuGet.org listing. Version, Authors and the licence come from Directory.Build.props. -->
+  <PropertyGroup>
+    <PackageId>mcpmysite</PackageId>
+    <PackageProjectUrl>https://github.com/pournasserian/mcp-my-site</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/pournasserian/mcp-my-site</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>mcp;model-context-protocol;search;indexer;crawler;embeddings;rag;dotnet-tool</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.8.4" />
     <PackageReference Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.8.3" />
@@ -24,6 +34,7 @@
   <ItemGroup>
     <!-- Every setting with its default; ships next to the tool and is the lowest configuration layer. -->
     <None Update="appsettings.defaults.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>
