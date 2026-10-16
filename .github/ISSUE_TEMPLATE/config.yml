@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/pournasserian/mcp-my-site/discussions
+    about: Ask how to do something, or discuss an idea before it becomes an issue.
+  - name: User guide
+    url: https://github.com/pournasserian/mcp-my-site/blob/master/docs/user-guide.md
+    about: Installation, every setting, deployment, troubleshooting and FAQ.

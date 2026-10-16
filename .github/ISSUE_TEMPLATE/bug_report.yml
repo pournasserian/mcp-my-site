@@ -1,0 +1,50 @@
+name: Bug report
+description: Something does not work as the documentation says
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Check the [troubleshooting section](https://github.com/pournasserian/mcp-my-site/blob/master/docs/user-guide.md#14-troubleshooting) first; if it does not cover your case, fill in the fields below.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Indexer (CLI)
+        - Server (MCP endpoint, search API, pages)
+        - Docker image
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Commands or requests that show the problem. Leave out API keys.
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: The indexer run report, server startup lines, or the error. Leave out API keys.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Commit SHA or image tag, and the .NET SDK version from `dotnet --version`.
+      placeholder: "2e9b050, .NET 10.0.100"
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11, Ubuntu 24.04, Docker on Linux"

@@ -1,18 +1,42 @@
 # mcp-my-site
 
-Make your website answer AI agents. A command-line indexer crawls the site and builds a search
-index; a small web app serves that index as an MCP server (`search` and `fetch` tools) and as a
-search API for the site's own search box. Hybrid keyword and vector search, one site per server,
-built for sites under 1,000 pages. .NET 10, MIT licence.
+[![CI](https://github.com/pournasserian/mcp-my-site/actions/workflows/ci.yml/badge.svg)](https://github.com/pournasserian/mcp-my-site/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download)
+
+Point it at your website and ChatGPT, Claude and any other MCP client can search and read it.
+
+A command-line indexer crawls the site and builds a hybrid keyword and vector index. A small
+ASP.NET Core app serves that index as an MCP server with `search` and `fetch` tools, and as a JSON
+search API for the site's own search box. One site per server, built for sites under 1,000 pages.
+
+## Try it now
+
+A live instance indexes [pournasserian.com](https://pournasserian.com):
+
+| | |
+|---|---|
+| MCP endpoint | `https://ai.pournasserian.com/mcp` |
+| Playground, an MCP client in the browser | <https://ai.pournasserian.com/playground> |
+| Search API | <https://ai.pournasserian.com/api/search?q=mcp%20caching> |
+| API reference | <https://ai.pournasserian.com/docs> |
+
+```bash
+claude mcp add --transport http pournasserian https://ai.pournasserian.com/mcp
+```
+
+Then ask Claude Code something about the site. For ChatGPT, add the endpoint as a connector; the
+tools follow the `search` and `fetch` contract its connectors expect.
+
+<!-- TODO(owner): add a screenshot of /playground or a short GIF of Claude Code answering a
+     question about the site. Put the file in docs/images/ and reference it here. -->
 
 ## Quick start
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and an API key for any
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and an API key for an
 OpenAI-compatible embeddings endpoint: OpenRouter by default, or
 [another provider](docs/user-guide.md#53-other-providers). The key is read from `AI_API_KEY` and
-never stored in files.
-
-macOS and Linux:
+never written to a file.
 
 ```bash
 git clone https://github.com/pournasserian/mcp-my-site.git
@@ -24,44 +48,41 @@ dotnet run --project src/McpMySite.Indexer -- search "how can I contact you" # c
 Index__Path=index dotnet run --project src/McpMySite.Server
 ```
 
-Windows PowerShell:
-
-```powershell
-git clone https://github.com/pournasserian/mcp-my-site.git
-cd mcp-my-site
-$env:AI_API_KEY = "sk-..."
-dotnet run --project src/McpMySite.Indexer -- init https://example.com
-dotnet run --project src/McpMySite.Indexer -- build
-dotnet run --project src/McpMySite.Indexer -- search "how can I contact you"
-$env:Index__Path = "index"
-dotnet run --project src/McpMySite.Server
-```
-
-Docker only, no .NET on the host (the server listens on port 8080):
-
-```bash
-docker run --rm -v "${PWD}:/src" -w /src -e AI_API_KEY mcr.microsoft.com/dotnet/sdk:10.0 sh -c "dotnet run --project src/McpMySite.Indexer -- init https://example.com && dotnet run --project src/McpMySite.Indexer -- build"
-docker build -f src/McpMySite.Server/Dockerfile -t mcp-my-site .
-docker run --rm -p 8080:8080 -v "${PWD}/index:/index:ro" -e Index__Path=/index -e AI_API_KEY mcp-my-site
-```
-
-The [user guide](docs/user-guide.md#4-quick-start) covers `cmd`, keeping the key across terminals,
-and Docker on Linux.
-
-### Connect an agent
+The server is now at `http://localhost:5000`: `/mcp` for agents, `/playground` to try it in the
+browser, `/api/search?q=contact` for JSON, `/healthz` for the loaded index.
 
 ```bash
 claude mcp add --transport http mysite http://localhost:5000/mcp
 ```
 
-Other clients (VS Code, Cursor, Claude Desktop) are in
-[Connecting MCP clients](docs/user-guide.md#8-connecting-mcp-clients). Without an agent, open
-`http://localhost:5000/api/search?q=contact`; `/healthz` shows the loaded index.
+Windows PowerShell and `cmd`, Docker without .NET on the host, and other MCP clients (VS Code,
+Cursor, Claude Desktop) are in the [user guide](docs/user-guide.md#4-quick-start).
+
+## Features
+
+- **Hybrid search.** BM25 keyword search and vector search over embeddings, fused per query, with a
+  keyword-only fallback when the embedding provider is unavailable.
+- **ChatGPT and Claude ready.** Streamable HTTP MCP endpoint with `search` and `fetch` tools in the
+  shape ChatGPT connectors use, and server instructions generated from the site itself. Works with
+  Claude Code, Claude Desktop, VS Code, Cursor and the MCP Inspector.
+- **Search API for your own site.** `GET /api/search` with CORS, rate limiting, an OpenAPI 3.1
+  document and an interactive reference. Drop-in snippet for a search box in the
+  [user guide](docs/user-guide.md#9-adding-a-search-box-to-your-site).
+- **Playground.** `/playground` is a small MCP client in the page, so anyone can try the server
+  without installing anything.
+- **Docker image.** One container for the server; mount the index or point it at a URL.
+- **Hot swap.** The server polls the index source and swaps in a new build without a restart.
+- **Telemetry.** OpenTelemetry traces, metrics and logs to Application Insights or any OTLP
+  collector. Query text is not logged unless you turn it on.
+- **Any embeddings provider.** OpenRouter by default; any OpenAI-compatible endpoint works.
 
 ## Documentation
 
-- [User guide](docs/user-guide.md): installation, every setting, deployment, troubleshooting, FAQ.
-- [Architecture](docs/architecture.md): how the indexer, the index format and the server fit together.
+- [User guide](docs/user-guide.md): installation, every setting, connecting clients, deployment,
+  troubleshooting, FAQ.
+- [Architecture](docs/architecture.md): how the indexer, the index format and the server fit
+  together.
+- [Changelog](CHANGELOG.md) and [contributing](CONTRIBUTING.md).
 
 ## Repository
 
@@ -77,4 +98,6 @@ dotnet build
 dotnet test
 ```
 
-Changes land on `master` through pull requests only.
+Questions and ideas go to [Discussions](https://github.com/pournasserian/mcp-my-site/discussions);
+bugs to [Issues](https://github.com/pournasserian/mcp-my-site/issues). Changes land on `master`
+through pull requests only. MIT licence.
