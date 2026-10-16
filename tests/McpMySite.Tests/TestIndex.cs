@@ -46,24 +46,26 @@ public static class TestIndex
 
     public static readonly float[] WidgetQuery = [0.0f, 1.0f, 0.0f, 0.0f];
 
-    public static IndexManifest Manifest(string storeType, DateTimeOffset? builtAt = null) => new()
+    /// <param name="keywordOnly">Describes an index without vectors, as the indexer writes with Embeddings:Enabled false.</param>
+    public static IndexManifest Manifest(string storeType, DateTimeOffset? builtAt = null, bool keywordOnly = false) => new()
     {
         FormatVersion = IndexFormat.CurrentVersion,
         StoreType = storeType,
         SiteUrl = "https://example.test/",
         SiteName = "Example",
-        EmbeddingModel = "test-model",
-        EmbeddingDimensions = Dimensions,
+        KeywordOnly = keywordOnly,
+        EmbeddingModel = keywordOnly ? null : "test-model",
+        EmbeddingDimensions = keywordOnly ? 0 : Dimensions,
         BuiltAt = builtAt ?? new DateTimeOffset(2026, 10, 10, 12, 0, 0, TimeSpan.Zero),
         PageCount = Pages.Length,
         ChunkCount = Chunks.Length,
         Instructions = "Test instructions.",
     };
 
-    public static async Task<string> WriteAsync(string storeType, DateTimeOffset? builtAt = null)
+    public static async Task<string> WriteAsync(string storeType, DateTimeOffset? builtAt = null, bool keywordOnly = false)
     {
         var directory = Path.Combine(Path.GetTempPath(), "mcpmysite-tests", Guid.NewGuid().ToString("N"));
-        await IndexStoreOpener.CreateWriter(storeType).WriteAsync(directory, Manifest(storeType, builtAt), Pages, Chunks, Vectors);
+        await IndexStoreOpener.CreateWriter(storeType).WriteAsync(directory, Manifest(storeType, builtAt, keywordOnly), Pages, Chunks, keywordOnly ? [] : Vectors);
         return directory;
     }
 }

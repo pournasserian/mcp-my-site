@@ -25,8 +25,9 @@ Diagrams are Mermaid and render on GitHub.
 
 Two deployables share one artefact. The **indexer** is a CLI that runs offline or in CI and produces
 an **index** folder. The **server** is an ASP.NET Core app that loads that folder and answers MCP
-clients and HTTP search requests. Both talk to an OpenAI-compatible embeddings endpoint; nothing else
-is shared at run time, and the two never talk to each other.
+clients and HTTP search requests. Both talk to an OpenAI-compatible embeddings endpoint, unless the
+index was built keyword-only (`Embeddings:Enabled` false), in which case neither does; nothing else is
+shared at run time, and the two never talk to each other.
 
 ```mermaid
 flowchart LR
@@ -198,7 +199,9 @@ Why this shape:
 - **One hit per page** matches what callers do with results: open a page. The winning chunk still
   supplies the snippet and the heading path, so the hit says where on the page the match is.
 - **Query vector is optional.** When the caller cannot embed the query, the vector list is empty and
-  fusion degrades gracefully to keyword ranking. The response says so (`keywordOnly`).
+  fusion degrades gracefully to keyword ranking. The response says so (`keywordOnly`). A keyword-only
+  index (manifest `keywordOnly: true`, no model, zero dimensions, empty vector data) takes the same
+  path for every query, and the server never embeds against it.
 - **Vectors are normalised at load** so cosine is a dot product. At this scale (tens of thousands of
   chunks at most) brute force is a few milliseconds and needs no index structure.
 

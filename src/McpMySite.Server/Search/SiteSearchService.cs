@@ -12,7 +12,7 @@ public sealed class SiteSearchService : IDisposable
     private readonly ILogger<SiteSearchService> _logger;
     private readonly object _lock = new();
     private IEmbeddingGenerator<string, Embedding<float>>? _generator;
-    private (string Model, int Dimensions)? _generatorKey;
+    private (string? Model, int Dimensions)? _generatorKey;
     private int _embeddingFailing;
 
     public SiteSearchService(IndexHolder holder, IOptions<EmbeddingOptions> embeddingOptions, IOptions<TelemetryOptions> telemetry, ILogger<SiteSearchService> logger)
@@ -39,7 +39,12 @@ public sealed class SiteSearchService : IDisposable
         var fallback = false;
         try
         {
-            vector = await GetGenerator(store.Manifest).GenerateVectorAsync(query, cancellationToken: cancellationToken);
+            // A keyword-only index has no vectors to compare against, so the query is not embedded either.
+            if (!store.Manifest.KeywordOnly && _embeddingOptions.Enabled)
+            {
+                vector = await GetGenerator(store.Manifest).GenerateVectorAsync(query, cancellationToken: cancellationToken);
+            }
+
             if (Interlocked.Exchange(ref _embeddingFailing, 0) == 1)
             {
                 _logger.LogInformation("Query embedding works again; searches are hybrid again");

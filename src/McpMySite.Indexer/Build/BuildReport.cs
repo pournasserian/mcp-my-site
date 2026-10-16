@@ -18,6 +18,8 @@ public sealed class BuildReport
 
     public string Store { get; set; } = string.Empty;
 
+    public bool KeywordOnly { get; set; }
+
     public int PagesFetched { get; set; }
 
     public int PagesIndexed { get; set; }

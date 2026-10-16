@@ -20,7 +20,7 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
         config.Validate();
         var siteUri = new Uri(config.Site.Url);
         var outputDirectory = Path.GetFullPath(Path.Combine(baseDirectory, config.Output.Directory));
-        var report = new BuildReport { SiteUrl = siteUri.ToString(), Store = config.Output.Store };
+        var report = new BuildReport { SiteUrl = siteUri.ToString(), Store = config.Output.Store, KeywordOnly = !config.Embeddings.Enabled };
         var source = config.Source.Type.ToString().ToLowerInvariant();
         var stopwatch = Stopwatch.StartNew();
 
@@ -29,15 +29,26 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
         activity?.SetTag("mcpmysite.source", source);
         activity?.SetTag("mcpmysite.store", config.Output.Store);
 
-        _logger.LogInformation(
-            "Building a {Store} index of {Site} from {Source} into {Directory}: up to {MaxPages} pages, embeddings {Model} ({Dimensions} dimensions) at {Endpoint}, cache {Cache}",
-            config.Output.Store, siteUri, config.Source.Type == SourceType.Folder ? config.Source.Folder : "a crawl", outputDirectory, config.Crawl.MaxPages,
-            config.Embeddings.Model, config.Embeddings.Dimensions, config.Embeddings.Endpoint, config.Cache.Enabled ? config.Cache.Path : "off");
+        var keywordOnly = report.KeywordOnly;
+        activity?.SetTag("mcpmysite.keyword_only", keywordOnly);
+        if (keywordOnly)
+        {
+            _logger.LogInformation(
+                "Building a keyword-only {Store} index of {Site} from {Source} into {Directory}: up to {MaxPages} pages, no embeddings",
+                config.Output.Store, siteUri, config.Source.Type == SourceType.Folder ? config.Source.Folder : "a crawl", outputDirectory, config.Crawl.MaxPages);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Building a {Store} index of {Site} from {Source} into {Directory}: up to {MaxPages} pages, embeddings {Model} ({Dimensions} dimensions) at {Endpoint}, cache {Cache}",
+                config.Output.Store, siteUri, config.Source.Type == SourceType.Folder ? config.Source.Folder : "a crawl", outputDirectory, config.Crawl.MaxPages,
+                config.Embeddings.Model, config.Embeddings.Dimensions, config.Embeddings.Endpoint, config.Cache.Enabled ? config.Cache.Path : "off");
+        }
 
         try
         {
             // Hybrid search needs vectors, so refuse to do any work without an embedding provider.
-            var generator = EmbeddingGeneratorFactory.Create(config.Embeddings);
+            var generator = keywordOnly ? null : EmbeddingGeneratorFactory.Create(config.Embeddings);
 
             var previous = await ReadPreviousManifestAsync(outputDirectory, cancellationToken);
             report.PreviousPageCount = previous?.PageCount ?? 0;
@@ -61,9 +72,10 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
 
             CheckSafety(config.Safety, report, pages.Count);
 
-            float[] vectors;
-            using (var embed = IndexerDiagnostics.ActivitySource.StartActivity("mcpmysite.build.embed"))
+            var vectors = Array.Empty<float>();
+            if (generator is not null)
             {
+                using var embed = IndexerDiagnostics.ActivitySource.StartActivity("mcpmysite.build.embed");
                 var cachePath = Path.GetFullPath(Path.Combine(baseDirectory, config.Cache.Path));
                 using var cache = config.Cache.Enabled ? new EmbeddingCache(cachePath) : null;
                 _logger.LogDebug("Embedding cache {Cache}", cache is null ? "off" : cachePath);
@@ -86,8 +98,9 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
                 SiteUrl = siteUri.ToString(),
                 SiteName = resolvedSiteName,
                 SiteDescription = siteDescription,
-                EmbeddingModel = config.Embeddings.Model,
-                EmbeddingDimensions = config.Embeddings.Dimensions,
+                KeywordOnly = keywordOnly,
+                EmbeddingModel = keywordOnly ? null : config.Embeddings.Model,
+                EmbeddingDimensions = keywordOnly ? 0 : config.Embeddings.Dimensions,
                 BuiltAt = builtAt,
                 PageCount = pages.Count,
                 ChunkCount = chunks.Count,
@@ -109,7 +122,7 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
                 await writer.WriteAsync(outputDirectory, manifest, pages, chunks, vectors, cancellationToken);
             }
 
-            _logger.LogInformation("Wrote {Store} index with {Pages} pages and {Chunks} chunks to {Directory}", config.Output.Store, pages.Count, chunks.Count, outputDirectory);
+            _logger.LogInformation("Wrote {Mode} {Store} index with {Pages} pages and {Chunks} chunks to {Directory}", keywordOnly ? "keyword-only" : "hybrid", config.Output.Store, pages.Count, chunks.Count, outputDirectory);
 
             report.Succeeded = true;
         }

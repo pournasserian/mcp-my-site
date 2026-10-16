@@ -47,7 +47,7 @@ public sealed record SiteInfo(string Status, SiteSummary? Site, IndexSummary? In
         var stale = ui.StaleAfterDays > 0 && now - manifest.BuiltAt > TimeSpan.FromDays(ui.StaleAfterDays);
         var index = new IndexSummary(
             manifest.BuiltAt, holder.LoadedAt, stale, manifest.PageCount, manifest.ChunkCount, manifest.StoreType, manifest.FormatVersion,
-            manifest.EmbeddingModel, manifest.EmbeddingDimensions, manifest.IndexerVersion, manifest.Stats);
+            manifest.KeywordOnly, manifest.EmbeddingModel, manifest.EmbeddingDimensions, manifest.IndexerVersion, manifest.Stats);
         return new SiteInfo("ok", site, index, endpoints, server);
     }
 
@@ -60,6 +60,8 @@ public sealed record SiteInfo(string Status, SiteSummary? Site, IndexSummary? In
 public sealed record SiteSummary(string Name, string Url, string? Description, string? Language);
 
 /// <param name="Stale">True when the index is older than Ui:StaleAfterDays.</param>
+/// <param name="KeywordOnly">True when the index holds no embeddings and every search is keyword search.</param>
+/// <param name="EmbeddingModel">Absent for a keyword-only index.</param>
 /// <param name="Stats">Numbers from the indexer run; absent for indexes from older indexers.</param>
 public sealed record IndexSummary(
     DateTimeOffset BuiltAt,
@@ -69,7 +71,8 @@ public sealed record IndexSummary(
     int ChunkCount,
     string Store,
     int FormatVersion,
-    string EmbeddingModel,
+    bool KeywordOnly,
+    string? EmbeddingModel,
     int EmbeddingDimensions,
     string? IndexerVersion,
     IndexStats? Stats);

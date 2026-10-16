@@ -6,6 +6,13 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Keyword-only mode: `mcpmysite init <url> --keyword-only` (or `Embeddings:Enabled` set to `false`)
+  builds an index without vectors, so a first try needs no embeddings provider or API key. The
+  manifest records it, and the server serves such an index from keyword search and says so on the
+  landing page, in `/healthz` and `/api/info`, and in the `search` tool description.
+
 ## [0.1.1] - 2026-10-16
 
 ### Added

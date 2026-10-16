@@ -83,6 +83,11 @@ public sealed class SqliteIndexStore : IIndexStore
             var vector = new List<int>();
             if (request.QueryVector is { } q)
             {
+                if (Manifest.KeywordOnly)
+                {
+                    throw new ArgumentException("The index is keyword-only and holds no vectors.");
+                }
+
                 if (q.Length != Manifest.EmbeddingDimensions)
                 {
                     throw new ArgumentException($"Query vector has {q.Length} dimensions; the index uses {Manifest.EmbeddingDimensions}.");

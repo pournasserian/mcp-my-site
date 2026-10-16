@@ -86,6 +86,39 @@ public class IndexStoreTests
         await Assert.ThrowsAsync<ArgumentException>(() => store.SearchAsync(new SearchRequest { Query = "x", QueryVector = new float[3] }));
     }
 
+    [Theory]
+    [MemberData(nameof(StoreTypes))]
+    public async Task KeywordOnlyIndexHasNoVectorsAndSearchesByKeyword(string storeType)
+    {
+        var directory = await TestIndex.WriteAsync(storeType, keywordOnly: true);
+        using var store = await IndexStoreOpener.OpenAsync(directory);
+
+        Assert.True(store.Manifest.KeywordOnly);
+        Assert.Null(store.Manifest.EmbeddingModel);
+        Assert.Equal(0, store.Manifest.EmbeddingDimensions);
+        Assert.Equal(4, store.Manifest.ChunkCount);
+
+        var response = await store.SearchAsync(new SearchRequest { Query = "kerosene", Limit = 5 });
+        Assert.True(response.KeywordOnly);
+        Assert.Equal("https://example.test/docs/rockets", response.Hits[0].Url);
+        Assert.Contains("<mark>kerosene</mark>", response.Hits[0].HighlightedSnippet);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.SearchAsync(new SearchRequest { Query = "kerosene", QueryVector = TestIndex.FuelQuery }));
+    }
+
+    [Fact]
+    public void ManifestRequiresEmbeddingsUnlessKeywordOnly()
+    {
+        var hybrid = TestIndex.Manifest(IndexFormat.JsonStoreType);
+        var keywordOnly = TestIndex.Manifest(IndexFormat.JsonStoreType, keywordOnly: true);
+
+        IndexManifest.Parse(keywordOnly.ToJson()).Validate();
+        Assert.Contains("\"keywordOnly\": true", keywordOnly.ToJson());
+        Assert.DoesNotContain("embeddingModel", keywordOnly.ToJson());
+        Assert.Throws<InvalidDataException>(() => (hybrid with { EmbeddingModel = null }).Validate());
+        Assert.Throws<InvalidDataException>(() => (hybrid with { KeywordOnly = true }).Validate());
+    }
+
     [Fact]
     public async Task JsonStoreRefusesTruncatedVectorFile()
     {

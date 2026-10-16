@@ -341,7 +341,7 @@ internal static class PageAssets
                     el('span', { className: 'meta', textContent: typeof hit.score === 'number' ? `score ${hit.score.toFixed(4)}` : '' }),
                     fetchButton)));
               }
-              const summary = `${data.results.length} result${data.results.length === 1 ? '' : 's'}${data.keywordOnly ? ' (keyword search only: the query could not be embedded)' : ''}`;
+              const summary = `${data.results.length} result${data.results.length === 1 ? '' : 's'}${data.keywordOnly ? ' (keyword search only)' : ''}`;
               box.replaceChildren(el('p', { className: 'meta', textContent: summary }), hits, raw);
             } else if (typeof data?.text === 'string') {
               const meta = [data.language, data.modified ? `modified ${data.modified.slice(0, 10)}` : null, `${data.text.length.toLocaleString()} characters`].filter(Boolean).join(' · ');

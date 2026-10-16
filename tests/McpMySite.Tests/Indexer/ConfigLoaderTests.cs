@@ -77,6 +77,28 @@ public class ConfigLoaderTests
     }
 
     [Fact]
+    public async Task KeywordOnlyConfigNeedsNoEmbeddingSettings()
+    {
+        var folder = NewFolder();
+        var config = new IndexerConfig();
+        config.Site.Url = "https://example.test";
+        config.Embeddings.Enabled = false;
+        var json = IndexerConfigLoader.ToAppSettingsJson(config);
+        await File.WriteAllTextAsync(Path.Combine(folder, "appsettings.json"), json);
+        Assert.Contains("\"Enabled\": false", json);
+
+        var loaded = IndexerConfigLoader.Load(Path.Combine(folder, "appsettings.json"), "Production");
+        Assert.False(loaded.Config.Embeddings.Enabled);
+        loaded.Config.Validate();
+
+        // Without a provider the model and dimensions are irrelevant; with one they are still required.
+        loaded.Config.Embeddings.Model = string.Empty;
+        loaded.Config.Validate();
+        loaded.Config.Embeddings.Enabled = true;
+        Assert.Throws<InvalidOperationException>(loaded.Config.Validate);
+    }
+
+    [Fact]
     public void ShippedDefaultsFileMatchesCodeDefaults()
     {
         var path = Path.Combine(AppContext.BaseDirectory, IndexerConfig.DefaultsFileName);

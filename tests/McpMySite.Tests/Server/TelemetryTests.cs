@@ -161,8 +161,8 @@ public sealed class ServerLoggingTests : IAsyncLifetime
         Assert.Contains("telemetry export None", startup.Message);
         Assert.Contains("query text logging off", startup.Message);
 
-        // No embedding key in tests, which the server calls out once at startup.
-        Assert.Contains(_logs.In("McpMySite.Server.Startup"), e => e.Level == LogLevel.Warning && e.Message.Contains("MCPMYSITE_TEST_KEY_THAT_IS_NOT_SET", StringComparison.Ordinal));
+        // No embedding key in tests, which the server calls out once the hybrid index is loaded.
+        Assert.Contains(_logs.In("McpMySite.Server.Index.IndexLoader"), e => e.Level == LogLevel.Warning && e.Message.Contains("MCPMYSITE_TEST_KEY_THAT_IS_NOT_SET", StringComparison.Ordinal));
     }
 
     [Fact]

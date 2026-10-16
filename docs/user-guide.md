@@ -57,7 +57,8 @@ Principles that shape everything below:
 
 - One website per index and per server. There is no multi-tenancy.
 - Built for small sites: mostly under 1,000 pages, often under 100.
-- Search is always hybrid (keyword plus vector), so an embedding provider is required.
+- Search is hybrid (keyword plus vector) with an embeddings provider, or keyword-only without one.
+  A keyword-only index needs no API key and is the quickest way to try the project (section 5.5).
 - Content selection is automatic. There are no per-site CSS selectors to maintain.
 - Configuration is file based. There is no admin UI.
 - Open source, MIT licence.
@@ -67,8 +68,8 @@ Principles that shape everything below:
 | Need | Details |
 |---|---|
 | .NET 10 SDK | To build and run. The runtime alone is enough for a published server. |
-| An embeddings endpoint | Any OpenAI-compatible `/embeddings` endpoint: an AI gateway (OpenRouter, Vercel AI Gateway, LiteLLM), a provider's own API (OpenAI, Azure OpenAI, Google Gemini) or a local server (Ollama). The default is OpenRouter with `openai/text-embedding-3-small` at 512 dimensions. See section 5.3. |
-| An API key | For that endpoint, read from an environment variable, `AI_API_KEY` by default. Never written to a config file or the index. |
+| An embeddings endpoint (for hybrid search) | Any OpenAI-compatible `/embeddings` endpoint: an AI gateway (OpenRouter, Vercel AI Gateway, LiteLLM), a provider's own API (OpenAI, Azure OpenAI, Google Gemini) or a local server (Ollama). The default is OpenRouter with `openai/text-embedding-3-small` at 512 dimensions. See section 5.3. Not needed for a keyword-only index (section 5.5). |
+| An API key (for hybrid search) | For that endpoint, read from an environment variable, `AI_API_KEY` by default. Never written to a config file or the index. |
 | A plain-HTML site | Pages must be fetchable over HTTP as HTML. JavaScript-rendered sites, PDFs and pages behind a login are out of scope. If your build produces static HTML, point the indexer at the folder instead. |
 | Docker (optional) | For the container image of the server. |
 
@@ -139,26 +140,24 @@ The image listens on port 8080 and runs as a non-root user. It is published for 
 
 ## 4. Quick start
 
-Five steps from nothing to an MCP server answering questions about your site. Run them from the root
-of a clone (section 3.1). The commands are the same on every OS; only setting environment variables
-differs, so pick the block for your shell.
+Four steps from nothing to an MCP server answering questions about your site, with no API key: the
+first index is keyword-only. Run them from the root of a clone (section 3.1). The commands are the
+same on every OS; only setting environment variables differs, so pick the block for your shell.
+Section 4.6 upgrades the index to hybrid search once you have an embeddings key.
 
 ### 4.1 macOS and Linux (bash, zsh)
 
 ```bash
 # 1. Make a config file for your site (writes appsettings.json in the current folder)
-mcpmysite init https://example.com
+mcpmysite init https://example.com --keyword-only
 
-# 2. Put your embeddings provider's API key in the environment (see section 5.2)
-export AI_API_KEY=sk-...
-
-# 3. Build the index into ./index
+# 2. Build the index into ./index
 mcpmysite build
 
-# 4. Try a few queries without starting anything
+# 3. Try a few queries without starting anything
 mcpmysite search "how can I contact you"
 
-# 5. Serve it
+# 4. Serve it
 Index__Path=index dotnet run --project src/McpMySite.Server
 ```
 
@@ -166,18 +165,15 @@ Index__Path=index dotnet run --project src/McpMySite.Server
 
 ```powershell
 # 1. Make a config file for your site
-mcpmysite init https://example.com
+mcpmysite init https://example.com --keyword-only
 
-# 2. Put your embeddings key in the environment (see section 5.2)
-$env:AI_API_KEY = "sk-..."
-
-# 3. Build the index into .\index
+# 2. Build the index into .\index
 mcpmysite build
 
-# 4. Try a few queries without starting anything
+# 3. Try a few queries without starting anything
 mcpmysite search "how can I contact you"
 
-# 5. Serve it
+# 4. Serve it
 $env:Index__Path = "index"
 dotnet run --project src/McpMySite.Server
 ```
@@ -188,39 +184,38 @@ dotnet run --project src/McpMySite.Server
 
 ```bat
 rem 1. Make a config file for your site
-mcpmysite init https://example.com
+mcpmysite init https://example.com --keyword-only
 
-rem 2. Put your embeddings key in the environment (see section 5.2)
-set AI_API_KEY=sk-...
-
-rem 3. Build the index into .\index
+rem 2. Build the index into .\index
 mcpmysite build
 
-rem 4. Try a few queries without starting anything
+rem 3. Try a few queries without starting anything
 mcpmysite search "how can I contact you"
 
-rem 5. Serve it
+rem 4. Serve it
 set Index__Path=index
 dotnet run --project src/McpMySite.Server
 ```
 
 Variables set with `set` or `$env:` last for the current window only. Section 5.2 shows how to keep
-the key for new terminals.
+a variable for new terminals.
 
 ### 4.4 Docker
 
 With only Git and Docker on the host, run the indexer in the .NET SDK image and the server in its own
-image (section 3.4). Set `AI_API_KEY` in your shell as above; `-e AI_API_KEY` without a
-value passes it through to the container.
+image (section 3.4).
 
 ```bash
-# 1 and 3. Make the config and build the index into ./index
-docker run --rm -v "${PWD}:/src" -w /src -e AI_API_KEY mcr.microsoft.com/dotnet/sdk:10.0 sh -c "dotnet run --project src/McpMySite.Indexer -- init https://example.com && dotnet run --project src/McpMySite.Indexer -- build"
+# 1 and 2. Make the config and build the index into ./index
+docker run --rm -v "${PWD}:/src" -w /src mcr.microsoft.com/dotnet/sdk:10.0 sh -c "dotnet run --project src/McpMySite.Indexer -- init https://example.com --keyword-only && dotnet run --project src/McpMySite.Indexer -- build"
 
-# 5. Build the server image and serve the index from a read-only mount
+# 4. Build the server image and serve the index from a read-only mount
 docker build -f src/McpMySite.Server/Dockerfile -t mcp-my-site .
-docker run --rm -p 8080:8080 -v "${PWD}/index:/index:ro" -e Index__Path=/index -e AI_API_KEY mcp-my-site
+docker run --rm -p 8080:8080 -v "${PWD}/index:/index:ro" -e Index__Path=/index mcp-my-site
 ```
+
+For a hybrid index (section 4.6) set `AI_API_KEY` in your shell and add `-e AI_API_KEY` to both
+`docker run` commands; without a value it passes the variable through to the container.
 
 The commands work as written in bash, zsh and PowerShell; in `cmd`, write `%CD%` instead of `${PWD}`.
 To skip the build, drop the `docker build` line and run `ghcr.io/pournasserian/mcp-my-site:latest`
@@ -237,16 +232,32 @@ The server prints the URL it listens on (by default `http://localhost:5000`). Th
 
 | URL | What you get |
 |---|---|
-| `http://localhost:5000/healthz` | JSON with the loaded index: site, page count, build time |
+| `http://localhost:5000/healthz` | JSON with the loaded index: site, page count, build time, whether it is keyword-only |
 | `http://localhost:5000/api/search?q=contact` | JSON search results |
 | `http://localhost:5000/mcp` | The MCP endpoint for agents (POST, JSON-RPC) |
 
 Point an MCP client at `http://localhost:5000/mcp` (section 8) and ask it something about the site.
 
+### 4.6 Upgrade to hybrid search
+
+A keyword-only index matches the words on a page. Hybrid search also matches meaning, so a question
+phrased differently from the page still finds it; it is what the live demo runs and the recommended
+setup for a site people will actually use. It needs an embeddings provider and its API key
+(section 5); with the default provider a small site embeds for a fraction of a cent (section 5.4).
+
+1. In `appsettings.json`, change `"Enabled": false` under `Embeddings` to `true`.
+2. Put the key in the environment (section 5.2), for example `export AI_API_KEY=sk-...`.
+3. Run `mcpmysite build` again. The index is rewritten with vectors.
+4. Start the server with the same variable set. It notices the new index on its next poll and embeds
+   queries from then on; without the key it still serves the index, from keyword search, and says
+   so in its log and in every response (`keywordOnly`).
+
 ## 5. The embedding provider and your API key
 
 Embeddings turn text into vectors so the search understands meaning as well as words. The indexer
-embeds every chunk once at build time; the server embeds each query at search time.
+embeds every chunk once at build time; the server embeds each query at search time. They are
+optional: with `Embeddings:Enabled` set to `false` the indexer writes a keyword-only index and
+nothing in this section is needed (section 5.5).
 
 mcp-my-site talks to any endpoint that speaks the OpenAI embeddings API, so you can use an AI
 gateway, a model provider directly, or a model running on your own machine. Nothing in the code is
@@ -346,12 +357,29 @@ Rules of thumb:
 few cents. Rebuilds re-embed only chunks whose text changed, thanks to the cache. Query embeddings are
 a few tokens each.
 
+### 5.5 Keyword-only mode
+
+`mcpmysite init <url> --keyword-only`, or `"Enabled": false` under `Embeddings` in `appsettings.json`,
+builds an index without vectors. No endpoint is contacted and no key is read, so the build runs
+anywhere .NET runs. The manifest records `keywordOnly: true`; the server sees it, never embeds queries
+for that index, and reports keyword-only on the landing page, in `/healthz` and `/api/info`, in the
+`search` tool description and in every search response.
+
+What you give up: matches by meaning. "How do I reach you" will not find a page that only says
+"contact"; BM25 ranks by the words themselves (no stemming, diacritics folded). What you keep:
+everything else, including `fetch`, the playground, the search API and hot swap. Switching later is a
+config change and a rebuild (section 4.6); the server picks up either kind of index without a restart.
+
+The server has the same switch. `Embeddings:Enabled` set to `false` on the server never embeds
+queries, even against a hybrid index, so a server without a key can serve any index from keyword
+search without logging a warning per search.
+
 ## 6. The indexer
 
 ### 6.1 Commands
 
 ```
-mcpmysite init <site-url> [--config <file>] [--store json|sqlite]
+mcpmysite init <site-url> [--config <file>] [--store json|sqlite] [--keyword-only]
 mcpmysite build [--config <file>] [--environment <name>] [--set Key=Value]... [--site-url <url>] [--folder <dir>] [--output <dir>] [--store json|sqlite] [--max-pages <n>] [--verbose]
 mcpmysite search <query> [--config <file>] [--environment <name>] [--index <dir>] [--limit <n>] [--keyword-only]
 ```
@@ -359,6 +387,8 @@ mcpmysite search <query> [--config <file>] [--environment <name>] [--index <dir>
 **`init`** writes a starter `appsettings.json` with every setting and its default, plus a `Logging`
 section. It refuses to overwrite an existing file. It is a convenience: a file with only `Site:Url` in
 it works too, because every other setting falls back to the shipped defaults (section 6.2).
+`--keyword-only` writes `Embeddings:Enabled` as `false` so the build needs no provider or key
+(section 5.5).
 
 **`build`** loads the configuration (section 6.2), applies the command-line overrides below, and
 performs a full rebuild. Relative paths (`Output:Directory`, `Cache:Path`, `Source:Folder`) resolve
@@ -439,6 +469,7 @@ which is why their shipped defaults are empty.
 | `Crawl:UserAgent` | string | `McpMySiteIndexer/0.1 (+https://github.com/pournasserian/mcp-my-site)` | Sent with every request. The robots.txt group `User-agent: McpMySiteIndexer` targets this crawler. |
 | `Chunking:MaxChars` | int | `1500` | Upper bound for a chunk. Roughly 350 tokens. |
 | `Chunking:MinChars` | int | `200` | Chunks shorter than this are merged with a neighbour. |
+| `Embeddings:Enabled` | bool | `true` | `false` builds a keyword-only index: no vectors, no provider, no key. The other `Embeddings` settings are then ignored. Section 5.5. |
 | `Embeddings:Endpoint` | string | `https://openrouter.ai/api/v1` | OpenAI-compatible base URL. |
 | `Embeddings:Model` | string | `openai/text-embedding-3-small` | Model id as the endpoint expects it. |
 | `Embeddings:Dimensions` | int | `512` | Requested vector size. Must match what the model returns. |
@@ -677,6 +708,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `Index:Path` | | Local folder holding the index. |
 | `Index:Url` | | URL of `manifest.json`, or of the folder that contains it. Takes precedence over `Path`. |
 | `Index:PollIntervalSeconds` | `300` | How often to check for a new manifest. `0` loads once and never polls. |
+| `Embeddings:Enabled` | `true` | `false` never embeds queries, so every search is keyword search. A keyword-only index (section 5.5) is served that way regardless of this setting. |
 | `Embeddings:Endpoint` | `https://openrouter.ai/api/v1` | OpenAI-compatible base URL used to embed queries. |
 | `Embeddings:ApiKeyEnvironmentVariable` | `AI_API_KEY` | Environment variable that holds the key. |
 | `Embeddings:ApiKey` | | Direct key value; prefer the variable or user-secrets. |
@@ -766,8 +798,8 @@ Returns structured content:
 }
 ```
 
-`keywordOnly` is `true` when the query could not be embedded and the result came from keyword search
-alone. Scores are reciprocal-rank-fusion scores, useful for ordering, not as probabilities. `id` is
+`keywordOnly` is `true` when the result came from keyword search alone: the index is keyword-only
+(section 5.5) or the query could not be embedded. Scores are reciprocal-rank-fusion scores, useful for ordering, not as probabilities. `id` is
 what to pass to `fetch`; today it is the page URL.
 
 **Tool `fetch`**
@@ -863,9 +895,11 @@ client address for rate limiting and telemetry, nothing more.
 `GET /healthz` returns `200` with the loaded index, or `503` when none is loaded:
 
 ```json
-{ "status": "ok", "site": "https://example.com/", "pages": 41,
+{ "status": "ok", "site": "https://example.com/", "pages": 41, "keywordOnly": false,
   "builtAt": "2026-10-10T22:20:05+00:00", "loadedAt": "2026-10-10T22:21:45+00:00", "lastError": null }
 ```
+
+`keywordOnly` is `true` for an index built without embeddings (section 5.5).
 
 `lastError` holds the most recent load or refresh failure even while an older index is still being
 served, which makes it the first place to look when a new index did not appear.
@@ -956,8 +990,8 @@ What the server logs:
 
 | Category | Level | What |
 |---|---|---|
-| `McpMySite.Server.Startup` | Information, Warning | Once at startup: version, environment, endpoints, embedding endpoint, exporter and whether query text is logged. A warning when no embedding key is set. |
-| `McpMySite.Server.Index.*` | Information, Warning, Error, Debug | The index source and poll interval; each load with store, pages, chunks, build time, model and duration; downloads. A failed load is a warning while an older index keeps serving and an error when none is loaded. Polls that find nothing new are debug. |
+| `McpMySite.Server.Startup` | Information | Once at startup: version, environment, endpoints, embedding endpoint, exporter and whether query text is logged. |
+| `McpMySite.Server.Index.*` | Information, Warning, Error, Debug | The index source and poll interval; each load with store, pages, chunks, build time, model and duration; downloads. A warning when a hybrid index is loaded and no embedding key is set. A failed load is a warning while an older index keeps serving and an error when none is loaded. Polls that find nothing new are debug. |
 | `McpMySite.Server.Search.SiteSearchService` | Information, Warning, Debug | Every search (channel, hits, duration, limit, keyword fallback) and every fetch (the page URL and duration, or "no such page"). The first embedding failure is a warning with the exception, repeats are debug, and recovery is logged. Searches refused because no index is loaded are warnings. |
 | `McpMySite.Server.Requests` | Warning | Requests turned away: a missing or invalid MCP API key, or the rate limit. Method and path only. |
 | `McpMySite.Server.Pages.LlmsTxt` | Information | Each time `llms.txt` is built. |
@@ -1399,7 +1433,8 @@ The setting is missing or malformed in the layer that won. Check `appsettings.js
 
 **`No embedding API key. Set the AI_API_KEY environment variable.`**
 The variable named by `Embeddings:ApiKeyEnvironmentVariable` is not set in this shell or CI job. The
-indexer refuses to run without it because hybrid search needs vectors. Section 5.2.
+indexer refuses to run without it because hybrid search needs vectors. Section 5.2. To build without
+a provider at all, set `Embeddings:Enabled` to `false` (section 5.5).
 
 **`Only 0 page(s) indexed; the minimum is 1.`**
 Nothing was fetched or everything was dropped. Run with `--verbose` and check: does
@@ -1471,10 +1506,11 @@ Add the page's origin to `SearchApi:AllowedOrigins` exactly (`https://example.co
 slash, no path). `www` and non-`www` are different origins.
 
 **Every search response has `"keywordOnly": true`.**
-Query embedding is failing: no key on the server, wrong `Embeddings:Endpoint`, or the provider is
-down. Results still come from keyword search. Check the server log: a missing key is reported at
-startup ("No embedding API key"), and any other failure as "Embedding failed; answering from keyword
-search until it recovers", with the exception, the first time it happens.
+Either the index is keyword-only (`/healthz` says so; section 5.5) or query embedding is failing: no
+key on the server, wrong `Embeddings:Endpoint`, or the provider is down. Results still come from
+keyword search. Check the server log: a missing key is reported when the index loads ("No embedding
+API key"), and any other failure as "Embedding failed; answering from keyword search until it
+recovers", with the exception, the first time it happens.
 
 **`Index format version 2 is not supported.`**
 The index was built by a newer indexer than the server understands. Update the server, or rebuild
@@ -1486,10 +1522,12 @@ gateway that ignores `Embeddings:Dimensions`. Rebuild with the model's native si
 
 ## 15. FAQ
 
-**Why is search always hybrid? Can I run without an embedding provider?**
-No. Keyword-only search misses paraphrases, vector-only search misses exact names and codes; the
-product is the combination. The only keyword-only path is the per-request fallback when the provider
-fails at query time, and that is recorded so you notice.
+**Can I run without an embedding provider?**
+Yes: `mcpmysite init <url> --keyword-only` (section 5.5) builds and serves an index with no vectors,
+no provider and no key. Hybrid search is the recommended setup, because keyword search misses
+paraphrases and vector search misses exact names and codes; the product is the combination. The
+switch is a config change and a rebuild, so start keyword-only and upgrade when you have a key
+(section 4.6).
 
 **Which embedding models can I use?**
 Any model behind an OpenAI-compatible `/embeddings` endpoint, whether a gateway, a provider or a
@@ -1537,12 +1575,14 @@ Any of: `Crawl:Exclude` globs, `noindex` on the page, `Disallow` in `robots.txt`
 of the sitemap when links are not followed.
 
 **Does the server need the API key too?**
-Yes, to embed queries. Without it every search falls back to keyword search and is marked
-`keywordOnly`. Builds, however, refuse to run without a key.
+For a hybrid index, yes, to embed queries. Without it every search falls back to keyword search and
+is marked `keywordOnly`. A keyword-only index needs no key anywhere. Builds with embeddings enabled
+refuse to run without a key.
 
 **What happens when the embedding provider is down?**
 Searches still work, from keyword search, and the fallback is counted in telemetry. Index builds
-fail rather than produce an index without vectors.
+with embeddings enabled fail rather than silently produce an index without vectors; a keyword-only
+build never contacts the provider.
 
 **Is the server stateful? Can I run several instances?**
 It is stateless: no sessions, no server-to-client requests. Run as many instances as you want behind
@@ -1653,4 +1693,6 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 - **Manifest**: the file that describes an index and lets the server validate it before loading.
 - **Hot swap**: replacing the in-memory index with a newly loaded one without restarting the server.
 - **Fallback**: answering a search from keyword ranking alone because the query could not be embedded.
+- **Keyword-only index**: an index built with `Embeddings:Enabled` false; it holds no vectors and every
+  search is keyword ranking.
 - **Stateless MCP**: the Streamable HTTP mode without sessions, where every request is independent.
