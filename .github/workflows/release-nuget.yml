@@ -1,0 +1,65 @@
+name: Release NuGet package
+
+on:
+  push:
+    tags: ['v*.*.*']
+  # A manual run publishes an existing tag again (first publish of a release, or a NuGet.org
+  # hiccup). The tag is an input so the run works from any branch; it names the package version.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, for example v0.1.0
+        required: true
+        type: string
+
+# The push goes to NuGet.org with its own API key, so the GitHub token stays read-only.
+permissions:
+  contents: read
+
+# Two runs for the same tag would race to push the same package, so they queue instead.
+concurrency:
+  group: release-nuget-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  publish:
+    name: Pack and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      # The package version is the tag without its leading v, so v1.2.3 publishes mcpmysite 1.2.3.
+      # It is passed to every dotnet call so the assembly and the package carry the same version.
+      - name: Version from tag
+        id: version
+        run: |
+          tag='${{ inputs.tag || github.ref_name }}'
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore McpMySite.slnx
+
+      - name: Build
+        run: dotnet build McpMySite.slnx --configuration Release --no-restore -p:Version=${{ steps.version.outputs.version }}
+
+      - name: Test
+        run: dotnet test tests/McpMySite.Tests --configuration Release --no-build -p:Version=${{ steps.version.outputs.version }}
+
+      - name: Pack
+        run: dotnet pack src/McpMySite.Indexer --configuration Release --no-build --output nupkg -p:Version=${{ steps.version.outputs.version }}
+
+      # --skip-duplicate makes a rerun of an already published version a no-op instead of a failure.
+      - name: Push to NuGet.org
+        run: dotnet nuget push nupkg/mcpmysite.${{ steps.version.outputs.version }}.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

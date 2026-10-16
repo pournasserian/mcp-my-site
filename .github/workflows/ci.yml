@@ -48,6 +48,11 @@ jobs:
       - name: Test
         run: dotnet test tests/McpMySite.Tests --configuration Release --no-build
 
+      # The release workflow packs the indexer for NuGet.org; packing here catches a broken package
+      # (a missing README, bad metadata) on the pull request instead of on the tag.
+      - name: Pack
+        run: dotnet pack src/McpMySite.Indexer --configuration Release --no-build --output nupkg
+
   container:
     name: Container image
     runs-on: ubuntu-latest
