@@ -28,8 +28,7 @@ claude mcp add --transport http pournasserian https://ai.pournasserian.com/mcp
 Then ask Claude Code something about the site. For ChatGPT, add the endpoint as a connector; the
 tools follow the `search` and `fetch` contract its connectors expect.
 
-<!-- TODO(owner): add a screenshot of /playground or a short GIF of Claude Code answering a
-     question about the site. Put the file in docs/images/ and reference it here. -->
+![The playground page calling the search tool: a query about designing an MCP tool returns three pages of pournasserian.com with snippets and a Fetch button each](docs/images/playground.png)
 
 ## Quick start
 
