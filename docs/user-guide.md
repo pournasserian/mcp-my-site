@@ -121,7 +121,10 @@ The published folder is self-contained apart from the .NET 10 runtime. Configura
 
 ### 3.4 The server as a container
 
-The Dockerfile lives at `src/McpMySite.Server/Dockerfile` and must be built from the repository root:
+Every release is published to GitHub Container Registry as
+`ghcr.io/pournasserian/mcp-my-site`, tagged with the version (`0.1.0`, `0.1`) and `latest`; pull
+it and skip the build below. To build it yourself, the Dockerfile lives at
+`src/McpMySite.Server/Dockerfile` and must be built from the repository root:
 
 ```bash
 docker build -f src/McpMySite.Server/Dockerfile -t mcp-my-site .
@@ -219,8 +222,9 @@ docker run --rm -p 8080:8080 -v "${PWD}/index:/index:ro" -e Index__Path=/index -
 ```
 
 The commands work as written in bash, zsh and PowerShell; in `cmd`, write `%CD%` instead of `${PWD}`.
-If .NET is installed on the host, build the index there (4.1 to 4.3) and use only the last two
-commands. On Linux the SDK container leaves root-owned `bin` and `obj` folders in the clone; add
+To skip the build, drop the `docker build` line and run `ghcr.io/pournasserian/mcp-my-site:latest`
+instead of `mcp-my-site`. If .NET is installed on the host, build the index there (4.1 to 4.3) and
+use only the last two commands. On Linux the SDK container leaves root-owned `bin` and `obj` folders in the clone; add
 `--user "$(id -u):$(id -g)" -e HOME=/tmp` to the first command to avoid that.
 
 The container listens on port 8080, so use `http://localhost:8080` in place of

@@ -70,7 +70,8 @@ Cursor, Claude Desktop) are in the [user guide](docs/user-guide.md#4-quick-start
   [user guide](docs/user-guide.md#9-adding-a-search-box-to-your-site).
 - **Playground.** `/playground` is a small MCP client in the page, so anyone can try the server
   without installing anything.
-- **Docker image.** One container for the server; mount the index or point it at a URL.
+- **Docker image.** `docker pull ghcr.io/pournasserian/mcp-my-site:latest`; mount the index or
+  point it at a URL.
 - **Hot swap.** The server polls the index source and swaps in a new build without a restart.
 - **Telemetry.** OpenTelemetry traces, metrics and logs to Application Insights or any OTLP
   collector. Query text is not logged unless you turn it on.

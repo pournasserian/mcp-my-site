@@ -6,6 +6,11 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Release workflow that publishes the server image to GitHub Container Registry as
+  `ghcr.io/pournasserian/mcp-my-site` on every version tag.
+
 ## [0.1.0] - 2026-10-16
 
 First public release.
