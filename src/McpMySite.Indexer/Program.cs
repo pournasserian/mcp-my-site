@@ -109,11 +109,13 @@ static Command InitCommand()
     var siteUrlArgument = new Argument<string>("site-url") { Description = "Base URL of the site, e.g. https://example.com" };
     var configOption = new Option<string>("--config", "-c") { Description = "Where to write the file.", DefaultValueFactory = _ => IndexerConfig.DefaultFileName };
     var storeOption = new Option<string>("--store") { Description = "json or sqlite.", DefaultValueFactory = _ => IndexFormat.JsonStoreType };
+    var keywordOnlyOption = new Option<bool>("--keyword-only") { Description = "Sets Embeddings:Enabled to false: keyword search only, no embeddings provider or API key needed." };
 
     var command = new Command("init", "Writes a starter appsettings.json with every setting and its default.");
     command.Arguments.Add(siteUrlArgument);
     command.Options.Add(configOption);
     command.Options.Add(storeOption);
+    command.Options.Add(keywordOnlyOption);
 
     command.SetAction(parseResult =>
     {
@@ -127,11 +129,14 @@ static Command InitCommand()
         var config = new IndexerConfig();
         config.Site.Url = parseResult.GetValue(siteUrlArgument)!;
         config.Output.Store = parseResult.GetValue(storeOption)!;
+        config.Embeddings.Enabled = !parseResult.GetValue(keywordOnlyOption);
 
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, IndexerConfigLoader.ToAppSettingsJson(config));
         Console.WriteLine($"Wrote {path}");
-        Console.WriteLine($"Set the {config.Embeddings.ApiKeyEnvironmentVariable} environment variable, then run: mcpmysite build --config {parseResult.GetValue(configOption)}");
+        Console.WriteLine(config.Embeddings.Enabled
+            ? $"Set the {config.Embeddings.ApiKeyEnvironmentVariable} environment variable, then run: mcpmysite build --config {parseResult.GetValue(configOption)}"
+            : $"Keyword-only index, no API key needed. Run: mcpmysite build --config {parseResult.GetValue(configOption)}");
         return 0;
     });
 
@@ -165,7 +170,7 @@ static Command SearchCommand()
         using var store = await IndexStoreOpener.OpenAsync(indexDirectory, cancellationToken);
 
         ReadOnlyMemory<float>? vector = null;
-        if (!parseResult.GetValue(keywordOnlyOption))
+        if (!parseResult.GetValue(keywordOnlyOption) && !store.Manifest.KeywordOnly && loaded.Config.Embeddings.Enabled)
         {
             var generator = EmbeddingGeneratorFactory.Create(loaded.Config.Embeddings, store.Manifest.EmbeddingModel, store.Manifest.EmbeddingDimensions);
             vector = await generator.GenerateVectorAsync(query, cancellationToken: cancellationToken);
@@ -193,7 +198,9 @@ static void PrintSummary(BuildReport report)
     Console.WriteLine();
     Console.WriteLine(report.Succeeded ? "Index built." : $"Index NOT built: {report.FailureReason}");
     Console.WriteLine($"  pages fetched {report.PagesFetched}, indexed {report.PagesIndexed}, noindex {report.PagesSkippedNoIndex}, duplicates {report.PagesSkippedDuplicate}, empty {report.PagesSkippedEmpty}");
-    Console.WriteLine($"  chunks {report.Chunks}, embeddings generated {report.EmbeddingsGenerated}, from cache {report.EmbeddingsFromCache}");
+    Console.WriteLine(report.KeywordOnly
+        ? $"  chunks {report.Chunks}, keyword-only (no embeddings)"
+        : $"  chunks {report.Chunks}, embeddings generated {report.EmbeddingsGenerated}, from cache {report.EmbeddingsFromCache}");
     Console.WriteLine($"  errors {report.Errors.Count} ({report.ErrorPercent:F0}%)");
     if (report.LowTextPages.Count > 0)
     {

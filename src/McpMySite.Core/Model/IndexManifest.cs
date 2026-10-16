@@ -18,9 +18,14 @@ public sealed record IndexManifest
     /// <summary>What the site is about, from configuration or the home page's meta description.</summary>
     public string? SiteDescription { get; init; }
 
-    public required string EmbeddingModel { get; init; }
+    /// <summary>True when the index holds no vectors; searches are answered from keyword ranking alone.</summary>
+    public bool KeywordOnly { get; init; }
 
-    public required int EmbeddingDimensions { get; init; }
+    /// <summary>Null in a keyword-only index.</summary>
+    public string? EmbeddingModel { get; init; }
+
+    /// <summary>Zero in a keyword-only index.</summary>
+    public int EmbeddingDimensions { get; init; }
 
     public required DateTimeOffset BuiltAt { get; init; }
 
@@ -72,7 +77,12 @@ public sealed record IndexManifest
             throw new InvalidDataException("Manifest has no site URL.");
         }
 
-        if (string.IsNullOrWhiteSpace(EmbeddingModel) || EmbeddingDimensions <= 0)
+        if (KeywordOnly && EmbeddingDimensions != 0)
+        {
+            throw new InvalidDataException("A keyword-only manifest must not declare embedding dimensions.");
+        }
+
+        if (!KeywordOnly && (string.IsNullOrWhiteSpace(EmbeddingModel) || EmbeddingDimensions <= 0))
         {
             throw new InvalidDataException("Manifest has no embedding model or dimensions.");
         }

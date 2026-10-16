@@ -183,6 +183,7 @@ app.MapGet("/healthz", (IndexHolder holder) =>
         status = manifest is null ? "no-index" : "ok",
         site = manifest?.SiteUrl,
         pages = manifest?.PageCount,
+        keywordOnly = manifest?.KeywordOnly,
         builtAt = manifest?.BuiltAt,
         loadedAt = holder.LoadedAt,
         lastError = holder.LastError,
@@ -217,17 +218,11 @@ app.Lifetime.ApplicationStarted.Register(() =>
         string.IsNullOrWhiteSpace(app.Services.GetRequiredService<IOptions<McpOptions>>().Value.ApiKey) ? "off" : "required",
         searchApiOptions.Enabled ? searchApiOptions.Path : "off",
         uiOptions.Enabled ? "on" : "off",
-        embeddingOptions.Endpoint,
+        embeddingOptions.Enabled ? embeddingOptions.Endpoint : "off",
         telemetryExporter,
         telemetryOptions.LogQueryText ? "on" : "off",
         telemetryOptions.LogBodies ? "on" : "off",
         cloudflareOptions.TrustConnectingIp && cloudflareOptions.TrustedNetworks.Length > 0 ? "on" : "off");
-    if (string.IsNullOrWhiteSpace(embeddingOptions.ResolveApiKey()))
-    {
-        startupLogger.LogWarning(
-            "No embedding API key: set the {Variable} environment variable. Until then every search is keyword-only.",
-            embeddingOptions.ApiKeyEnvironmentVariable);
-    }
 });
 
 app.Run();

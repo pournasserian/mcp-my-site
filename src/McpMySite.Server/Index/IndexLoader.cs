@@ -8,9 +8,11 @@ public sealed class IndexLoader(
     IndexHolder holder,
     IOptions<IndexOptions> options,
     IHttpClientFactory httpClientFactory,
-    ILogger<IndexLoader> logger)
+    ILogger<IndexLoader> logger,
+    IOptions<EmbeddingOptions>? embeddingOptions = null)
 {
     private readonly IndexOptions _options = options.Value;
+    private readonly EmbeddingOptions _embeddings = embeddingOptions?.Value ?? new EmbeddingOptions();
     private string? _currentTempDirectory;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.Path) || !string.IsNullOrWhiteSpace(_options.Url);
@@ -155,10 +157,26 @@ public sealed class IndexLoader(
         }
     }
 
-    private void LogLoaded(IndexManifest manifest, string source, TimeSpan elapsed) =>
+    private void LogLoaded(IndexManifest manifest, string source, TimeSpan elapsed)
+    {
+        if (manifest.KeywordOnly)
+        {
+            logger.LogInformation(
+                "Loaded keyword-only {Store} index from {Source} in {ElapsedMs:F0} ms: {Pages} pages, {Chunks} chunks, built {BuiltAt:u}",
+                manifest.StoreType, source, elapsed.TotalMilliseconds, manifest.PageCount, manifest.ChunkCount, manifest.BuiltAt);
+            return;
+        }
+
         logger.LogInformation(
             "Loaded {Store} index from {Source} in {ElapsedMs:F0} ms: {Pages} pages, {Chunks} chunks, built {BuiltAt:u}, embeddings {EmbeddingModel} ({EmbeddingDimensions} dimensions)",
             manifest.StoreType, source, elapsed.TotalMilliseconds, manifest.PageCount, manifest.ChunkCount, manifest.BuiltAt, manifest.EmbeddingModel, manifest.EmbeddingDimensions);
+        if (_embeddings.Enabled && string.IsNullOrWhiteSpace(_embeddings.ResolveApiKey()))
+        {
+            logger.LogWarning(
+                "No embedding API key: set the {Variable} environment variable. Until then every search is keyword-only.",
+                _embeddings.ApiKeyEnvironmentVariable);
+        }
+    }
 
     private bool IsNewer(IndexManifest manifest)
     {

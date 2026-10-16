@@ -98,8 +98,9 @@ public sealed class SiteTools(SiteSearchService search)
         }
 
         var site = about.Length > 0 ? $"{name} ({manifest.SiteUrl}): {about}" : $"{name} ({manifest.SiteUrl}).";
+        var method = manifest.KeywordOnly ? "Keyword search" : "Hybrid keyword and semantic search";
         return $"Searches the website {site} "
-            + $"Hybrid keyword and semantic search over its {manifest.PageCount} pages; returns the best matching pages with a short snippet each. "
+            + $"{method} over its {manifest.PageCount} pages; returns the best matching pages with a short snippet each. "
             + "Call fetch with a result's id or URL to read the whole page.";
     }
 }

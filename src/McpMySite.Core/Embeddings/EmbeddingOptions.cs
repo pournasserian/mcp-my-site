@@ -8,6 +8,12 @@ public sealed class EmbeddingOptions
 {
     public const string SectionName = "Embeddings";
 
+    /// <summary>
+    /// False builds and serves a keyword-only index: no provider, no key, no vectors. The indexer records it in the
+    /// manifest; the server never embeds queries for such an index, and with this false never embeds at all.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>Base URL of the OpenAI-compatible API, including the version segment.</summary>
     public string Endpoint { get; set; } = "https://openrouter.ai/api/v1";
 

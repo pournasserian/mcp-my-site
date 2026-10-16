@@ -33,18 +33,15 @@ tools follow the `search` and `fetch` contract its connectors expect.
 
 ## Quick start
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and an API key for an
-OpenAI-compatible embeddings endpoint: OpenRouter by default, or
-[another provider](docs/user-guide.md#53-other-providers). The key is read from `AI_API_KEY` and
-never written to a file.
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download). Nothing else: the first index is
+keyword-only, so no API key is involved.
 
 ```bash
 dotnet tool install --global mcpmysite
-export AI_API_KEY=sk-...
-mcpmysite init https://example.com         # writes appsettings.json
-mcpmysite build                            # crawls the site into ./index
-mcpmysite search "how can I contact you"   # checks the index
-docker run --rm -p 5000:8080 -v "$PWD/index:/index:ro" -e Index__Path=/index -e AI_API_KEY ghcr.io/pournasserian/mcp-my-site:latest
+mcpmysite init https://example.com --keyword-only   # writes appsettings.json
+mcpmysite build                                     # crawls the site into ./index
+mcpmysite search "how can I contact you"            # checks the index
+docker run --rm -p 5000:8080 -v "$PWD/index:/index:ro" -e Index__Path=/index ghcr.io/pournasserian/mcp-my-site:latest
 ```
 
 Without Docker, clone the repository and run the server from source with
@@ -59,6 +56,18 @@ browser, `/api/search?q=contact` for JSON, `/healthz` for the loaded index.
 claude mcp add --transport http mysite http://localhost:5000/mcp
 ```
 
+**Upgrade to hybrid search.** Keyword search matches words; hybrid search also matches meaning, and
+is what the live instance runs. It needs an API key for an OpenAI-compatible embeddings endpoint,
+OpenRouter by default or [another provider](docs/user-guide.md#53-other-providers); the key is read
+from `AI_API_KEY` and never written to a file. A small site embeds for a fraction of a cent.
+
+```bash
+export AI_API_KEY=sk-...
+# in appsettings.json, under Embeddings, change "Enabled": false to true, then rebuild and serve
+mcpmysite build
+docker run --rm -p 5000:8080 -v "$PWD/index:/index:ro" -e Index__Path=/index -e AI_API_KEY ghcr.io/pournasserian/mcp-my-site:latest
+```
+
 Windows PowerShell and `cmd`, Docker without .NET on the host, and other MCP clients (VS Code,
 Cursor, Claude Desktop) are in the [user guide](docs/user-guide.md#4-quick-start).
 
@@ -66,6 +75,8 @@ Cursor, Claude Desktop) are in the [user guide](docs/user-guide.md#4-quick-start
 
 - **Hybrid search.** BM25 keyword search and vector search over embeddings, fused per query, with a
   keyword-only fallback when the embedding provider is unavailable.
+- **Works without a key.** A keyword-only index needs no embeddings provider at all; switch to
+  hybrid search later with one setting and a rebuild.
 - **ChatGPT and Claude ready.** Streamable HTTP MCP endpoint with `search` and `fetch` tools in the
   shape ChatGPT connectors use, and server instructions generated from the site itself. Works with
   Claude Code, Claude Desktop, VS Code, Cursor and the MCP Inspector.

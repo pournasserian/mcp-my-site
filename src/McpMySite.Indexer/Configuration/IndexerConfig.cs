@@ -49,7 +49,7 @@ public sealed class IndexerConfig
             throw new InvalidOperationException("Output:Store must be \"json\" or \"sqlite\".");
         }
 
-        if (Embeddings.Dimensions <= 0 || string.IsNullOrWhiteSpace(Embeddings.Model))
+        if (Embeddings.Enabled && (Embeddings.Dimensions <= 0 || string.IsNullOrWhiteSpace(Embeddings.Model)))
         {
             throw new InvalidOperationException("Embeddings:Model and Embeddings:Dimensions are required.");
         }

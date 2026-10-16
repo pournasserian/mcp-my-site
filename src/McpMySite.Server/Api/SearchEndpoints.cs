@@ -44,7 +44,7 @@ public static class SearchEndpoints
         .WithTags("Search")
         .WithSummary("Search the site")
         .WithDescription("Returns the pages that best match the query, ranked by hybrid keyword and semantic search, each with a plain and a highlighted snippet. "
-            + "When the query cannot be embedded the results come from keyword search alone and keywordOnly is true.")
+            + "When the index holds no embeddings, or the query cannot be embedded, the results come from keyword search alone and keywordOnly is true.")
         .Produces<SearchApiResponse>()
         .Produces<ApiError>(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status429TooManyRequests)
