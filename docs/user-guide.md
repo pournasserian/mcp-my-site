@@ -777,6 +777,9 @@ URL, and the server picks it up within the poll interval.
   behind a load balancer without affinity.
 - Clients must send `Accept: application/json, text/event-stream` (the MCP specification requires
   it); the response is a single JSON or SSE message.
+- A person who opens the endpoint's URL in a browser is redirected to the landing page: any `GET` or
+  `HEAD` on `Mcp:Path` without `text/event-stream` in `Accept` goes to `/` while `Ui:Enabled` is on.
+  With the pages off, the transport answers `405` as the specification says.
 - Capabilities: tools only. No resources, no prompts.
 - `initialize` returns the server name and version and the instructions described in section 6.8.
 - `tools/list` describes `search` with the loaded site's name, URL, description and page count, so a
@@ -912,6 +915,11 @@ client address for rate limiting and telemetry, nothing more.
 
 `lastError` holds the most recent load or refresh failure even while an older index is still being
 served, which makes it the first place to look when a new index did not appear.
+
+Every page and JSON endpoint (`/`, `/playground`, `/llms.txt`, `/robots.txt`, `/sitemap.xml`,
+`/api/info`, `/api/search`, `/healthz`, the OpenAPI document and `/docs`) answers `HEAD` with the
+same status and headers as `GET` and no body, so uptime monitors, link checkers and link previews
+that send `HEAD` first see the server as up.
 
 `GET /api/info` returns everything the landing page shows, as JSON: the site (name, URL, description,
 main language), the index (build and load times, `stale`, page and chunk counts, store, embedding

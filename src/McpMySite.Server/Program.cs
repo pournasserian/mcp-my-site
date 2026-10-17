@@ -133,6 +133,15 @@ app.UseMiddleware<BodyLoggingMiddleware>();
 app.UseCors();
 app.UseRateLimiter();
 
+// A person who opens the MCP URL in a browser lands on the landing page instead of the transport's bare 405. An MCP
+// client that opens an event stream asks for text/event-stream and is not touched; without the pages there is nowhere
+// to send a browser, so the transport answers as before.
+app.UseWhen(context => IsBrowserOnMcpEndpoint(context, mcpOptions.Path) && context.RequestServices.GetRequiredService<IOptions<UiOptions>>().Value.Enabled, branch => branch.Run(context =>
+{
+    context.Response.Redirect(context.Request.PathBase.Add("/").Value!);
+    return Task.CompletedTask;
+}));
+
 // Optional API key on the MCP endpoint only; the search API is public by design.
 app.UseWhen(context => context.Request.Path.StartsWithSegments(mcpOptions.Path), branch => branch.Use(async (context, next) =>
 {
@@ -189,7 +198,7 @@ app.MapGet("/healthz", (IndexHolder holder) =>
         lastError = holder.LastError,
     };
     return manifest is null ? Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable) : Results.Ok(body);
-}).ExcludeFromDescription().WithHttpLogging(HttpLoggingFields.None);
+}).AllowHead().ExcludeFromDescription().WithHttpLogging(HttpLoggingFields.None);
 
 // With the pages on, / is the landing page; without them it stays a short text summary.
 if (!uiOptions.Enabled)
@@ -199,7 +208,7 @@ if (!uiOptions.Enabled)
         var manifest = holder.Current?.Manifest;
         var name = manifest?.SiteName ?? manifest?.SiteUrl ?? "no index loaded";
         return Results.Text($"mcp-my-site for {name}\nMCP endpoint: {mcpOptions.Path}\nSearch API: {(searchApiOptions.Enabled ? searchApiOptions.Path + "?q=..." : "disabled")}\n");
-    }).ExcludeFromDescription();
+    }).AllowHead().ExcludeFromDescription();
 }
 
 // What this instance serves and where its telemetry goes, so a log alone shows how the server was configured.
@@ -226,6 +235,11 @@ app.Lifetime.ApplicationStarted.Register(() =>
 });
 
 app.Run();
+
+static bool IsBrowserOnMcpEndpoint(HttpContext context, string mcpPath) =>
+    (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method))
+    && context.Request.Path.StartsWithSegments(mcpPath, out var remaining) && (!remaining.HasValue || remaining.Value == "/")
+    && !context.Request.Headers.Accept.ToString().Contains("text/event-stream", StringComparison.OrdinalIgnoreCase);
 
 static bool CryptographicEquals(string? a, string b)
 {

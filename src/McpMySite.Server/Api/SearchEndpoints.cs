@@ -60,7 +60,8 @@ public static class SearchEndpoints
             return Task.CompletedTask;
         })
         .RequireRateLimiting(RateLimitPolicy)
-        .RequireCors(CorsPolicy);
+        .RequireCors(CorsPolicy)
+        .AllowHead();
 
         return endpoint;
     }

@@ -20,7 +20,8 @@ public static class InfoEndpoints
             .WithDescription("Returns the site, the loaded index with its build statistics, and the endpoint URLs. Answers 503 with the same shape, and no index, until an index is loaded.")
             .Produces<SiteInfo>()
             .Produces<SiteInfo>(StatusCodes.Status503ServiceUnavailable)
-            .RequireCors(SearchEndpoints.CorsPolicy);
+            .RequireCors(SearchEndpoints.CorsPolicy)
+            .AllowHead();
 }
 
 /// <param name="Status">"ok", or "no-index" until an index is loaded.</param>
