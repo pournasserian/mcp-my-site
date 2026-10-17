@@ -16,6 +16,7 @@ public static class PageEndpoints
         // robots.txt is served either way, so a server without pages tells crawlers to stay out entirely.
         app.MapGet("/robots.txt", (HttpRequest request, IOptions<UiOptions> options, IOptions<McpOptions> mcp) =>
             Results.Text(RobotsTxt(SiteInfo.BaseUrl(request, options.Value), options.Value.Enabled, mcp.Value.Path), "text/plain; charset=utf-8"))
+            .AllowHead()
             .ExcludeFromDescription();
 
         if (!ui.Enabled)
@@ -33,14 +34,14 @@ public static class PageEndpoints
                 // Crawlers retry a 503 later instead of indexing an empty page.
                 StatusCode = info.Index is null ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status200OK,
             };
-        }).ExcludeFromDescription();
+        }).AllowHead().ExcludeFromDescription();
 
         app.MapGet(PlaygroundPath, (HttpRequest request, IndexHolder holder, IOptions<McpOptions> mcp, IOptions<SearchApiOptions> searchApi, IOptions<UiOptions> options) =>
         {
             var baseUrl = SiteInfo.BaseUrl(request, options.Value);
             var info = SiteInfo.Create(holder, mcp.Value, searchApi.Value, options.Value, baseUrl, DateTimeOffset.UtcNow);
             return new RazorComponentResult<PlaygroundPage>(new { Info = info, BaseUrl = baseUrl, EndpointPath = request.PathBase + mcp.Value.Path });
-        }).ExcludeFromDescription();
+        }).AllowHead().ExcludeFromDescription();
 
         app.MapGet("/llms.txt", async (HttpRequest request, IndexHolder holder, LlmsTxt llms, IOptions<McpOptions> mcp, IOptions<SearchApiOptions> searchApi, IOptions<UiOptions> options, CancellationToken cancellationToken) =>
         {
@@ -50,10 +51,11 @@ public static class PageEndpoints
             return text is null
                 ? Results.Text("No index is loaded yet.\n", "text/plain; charset=utf-8", statusCode: StatusCodes.Status503ServiceUnavailable)
                 : Results.Text(text, "text/plain; charset=utf-8");
-        }).ExcludeFromDescription();
+        }).AllowHead().ExcludeFromDescription();
 
         app.MapGet("/sitemap.xml", (HttpRequest request, IndexHolder holder, IOptions<UiOptions> options) =>
             Results.Text(Sitemap(SiteInfo.BaseUrl(request, options.Value), holder.Current?.Manifest.BuiltAt), "application/xml; charset=utf-8"))
+            .AllowHead()
             .ExcludeFromDescription();
     }
 
