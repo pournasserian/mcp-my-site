@@ -9,11 +9,11 @@
     "source": "github",
     "id": "1413689394"
   },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/pournasserian/mcp-my-site:0.2.0",
+      "identifier": "ghcr.io/pournasserian/mcp-my-site:0.2.1",
       "runtimeHint": "docker",
       "transport": {
         "type": "streamable-http",
