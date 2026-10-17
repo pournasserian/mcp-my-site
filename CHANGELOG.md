@@ -6,6 +6,15 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Every page and JSON endpoint answers `HEAD` like `GET`, without a body, instead of `405`; link
+  checkers, link previews and uptime monitors that send `HEAD` first no longer see the server as
+  broken (#47). The OpenAPI document still describes the `GET` operations only.
+- A browser opening the MCP endpoint's URL is redirected to the landing page instead of getting a
+  bare `405`, while `Ui:Enabled` is on. Requests that ask for `text/event-stream` reach the
+  transport as before (#48).
+
 ## [0.2.1] - 2026-10-17
 
 ### Added
