@@ -6,6 +6,12 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `server.json` at the repository root, the manifest for the project's listing in the official MCP
+  registry, and the `io.modelcontextprotocol.server.name` label on the server image that the
+  registry uses to verify the listing.
+
 ## [0.2.0] - 2026-10-16
 
 ### Added

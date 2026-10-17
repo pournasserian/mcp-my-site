@@ -13,6 +13,9 @@ COPY src/McpMySite.Server/ src/McpMySite.Server/
 RUN dotnet publish src/McpMySite.Server/McpMySite.Server.csproj -c Release -o /app --no-restore -a $TARGETARCH
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+# The MCP registry reads this label from the published image to prove the listing in server.json
+# belongs to this repository, so the value must equal the "name" there. CI checks that they agree.
+LABEL io.modelcontextprotocol.server.name="io.github.pournasserian/mcp-my-site"
 WORKDIR /app
 COPY --from=build /app .
 ENV ASPNETCORE_HTTP_PORTS=8080

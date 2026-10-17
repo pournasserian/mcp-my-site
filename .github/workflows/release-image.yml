@@ -70,3 +70,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Publishing the listing to the MCP registry checks this label on the pushed image, so a
+      # release whose image lost it fails here rather than at publish time.
+      - name: Check the registry label
+        run: |
+          name=$(jq -r .name server.json)
+          docker buildx imagetools inspect "ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}" --format '{{json .Image}}' \
+            | jq -e --arg name "$name" 'to_entries | map(.value.config.Labels["io.modelcontextprotocol.server.name"] == $name) | all'

@@ -63,6 +63,21 @@ jobs:
       - name: Build image
         run: docker build --file src/McpMySite.Server/Dockerfile --tag mcp-my-site:ci .
 
+      # server.json is the project's entry in the MCP registry. The registry proves ownership of the
+      # image by the io.modelcontextprotocol.server.name label, so the label must equal the name in
+      # the manifest, and the manifest's version and image tag must follow the release version.
+      - name: Check registry manifest
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher validate server.json
+          name=$(jq -r .name server.json)
+          label=$(docker inspect mcp-my-site:ci --format '{{index .Config.Labels "io.modelcontextprotocol.server.name"}}')
+          version=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' Directory.Build.props)
+          echo "name=$name label=$label version=$version"
+          [ "$label" = "$name" ]
+          [ "$(jq -r .version server.json)" = "$version" ]
+          [ "$(jq -r '.packages[0].identifier' server.json)" = "ghcr.io/pournasserian/mcp-my-site:$version" ]
+
       # The release publishes an arm64 image too; cross-compiling it here catches a Dockerfile
       # change that only breaks that platform. Nothing is loaded or run, so no emulation is needed.
       - name: Build arm64 image

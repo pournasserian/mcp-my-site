@@ -1,0 +1,66 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.pournasserian/mcp-my-site",
+  "title": "mcp-my-site",
+  "description": "Search and fetch tools for one website, served from an index you build with the mcpmysite crawler.",
+  "websiteUrl": "https://github.com/pournasserian/mcp-my-site#readme",
+  "repository": {
+    "url": "https://github.com/pournasserian/mcp-my-site",
+    "source": "github",
+    "id": "1413689394"
+  },
+  "version": "0.2.0",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/pournasserian/mcp-my-site:0.2.0",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:8080/mcp"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "-p",
+          "value": "8080:8080",
+          "description": "Publish the server's port 8080 on the host."
+        },
+        {
+          "type": "named",
+          "name": "-v",
+          "value": "{index_dir}:/index:ro",
+          "description": "Mount the index folder built by `mcpmysite build` into the container.",
+          "isRequired": true,
+          "variables": {
+            "index_dir": {
+              "description": "Absolute path of the index folder on the host.",
+              "format": "filepath",
+              "isRequired": true
+            }
+          }
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "Index__Path",
+          "description": "Folder inside the container that holds the index, the target of the mount above.",
+          "default": "/index",
+          "isRequired": true
+        },
+        {
+          "name": "AI_API_KEY",
+          "description": "API key for the embeddings provider, needed only to serve a hybrid index. Leave it unset for a keyword-only index.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://ai.pournasserian.com/mcp"
+    }
+  ]
+}
