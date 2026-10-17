@@ -6,6 +6,8 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-17
+
 ### Added
 
 - `server.json` at the repository root, the manifest for the project's listing in the official MCP
@@ -57,7 +59,8 @@ First public release.
 - Dockerfile for the server and a CI workflow that builds and tests on Linux and Windows.
 - README, user guide and architecture documentation.
 
-[Unreleased]: https://github.com/pournasserian/mcp-my-site/compare/v0.2.0...master
+[Unreleased]: https://github.com/pournasserian/mcp-my-site/compare/v0.2.1...master
+[0.2.1]: https://github.com/pournasserian/mcp-my-site/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/pournasserian/mcp-my-site/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/pournasserian/mcp-my-site/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/pournasserian/mcp-my-site/compare/v0.1.0...v0.1.1
