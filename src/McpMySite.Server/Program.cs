@@ -143,7 +143,7 @@ app.UseRateLimiter();
 // A person who opens the MCP URL in a browser lands on the landing page instead of the transport's bare 405. An MCP
 // client that opens an event stream asks for text/event-stream and is not touched; without the pages there is nowhere
 // to send a browser, so the transport answers as before.
-app.UseWhen(context => IsBrowserOnMcpEndpoint(context, mcpOptions.Path) && context.RequestServices.GetRequiredService<IOptions<UiOptions>>().Value.Enabled, branch => branch.Run(context =>
+app.UseWhen(context => IsBrowserOnMcpEndpoint(context, mcpOptions.Path) && context.RequestServices.GetRequiredService<IOptions<UiOptions>>().Value.ServesLandingPage, branch => branch.Run(context =>
 {
     context.Response.Redirect(context.Request.PathBase.Add("/").Value!);
     return Task.CompletedTask;
@@ -209,8 +209,8 @@ app.MapGet("/healthz", (IndexHolder holder) =>
     return manifest is null ? Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable) : Results.Ok(body);
 }).AllowHead().ExcludeFromDescription().WithHttpLogging(HttpLoggingFields.None);
 
-// With the pages on, / is the landing page; without them it stays a short text summary.
-if (!uiOptions.Enabled)
+// With the pages on, / is the landing page; without them, or with Ui:LandingPage off, it stays a short text summary.
+if (!uiOptions.ServesLandingPage)
 {
     app.MapGet("/", (IndexHolder holder) =>
     {
@@ -235,7 +235,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
         mcpOptions.Path,
         string.IsNullOrWhiteSpace(app.Services.GetRequiredService<IOptions<McpOptions>>().Value.ApiKey) ? "off" : "required",
         searchApiOptions.Enabled ? searchApiOptions.Path : "off",
-        uiOptions.Enabled ? "on" : "off",
+        PagesSummary(uiOptions),
         embeddingOptions.Enabled ? embeddingOptions.Endpoint : "off",
         telemetryExporter,
         telemetryOptions.Metrics,
@@ -251,6 +251,22 @@ static bool IsBrowserOnMcpEndpoint(HttpContext context, string mcpPath) =>
     (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method))
     && context.Request.Path.StartsWithSegments(mcpPath, out var remaining) && (!remaining.HasValue || remaining.Value == "/")
     && !context.Request.Headers.Accept.ToString().Contains("text/event-stream", StringComparison.OrdinalIgnoreCase);
+
+static string PagesSummary(UiOptions ui)
+{
+    if (!ui.Enabled)
+    {
+        return "off";
+    }
+
+    var hidden = new List<string>();
+    if (!ui.LandingPage) hidden.Add("landing page");
+    if (!ui.ApiReference) hidden.Add("API reference");
+    if (!ui.ShowSearchApi) hidden.Add("search API");
+    if (!ui.ShowSearchDetails) hidden.Add("search details");
+    if (!ui.ShowBuildDetails) hidden.Add("build details");
+    return hidden.Count == 0 ? "on" : "on, hiding " + string.Join(", ", hidden);
+}
 
 static bool CryptographicEquals(string? a, string b)
 {

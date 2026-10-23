@@ -125,7 +125,7 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
             SiteDescription = "Rockets\nand widgets.",
             Stats = new IndexStats { Sections = [new SectionStats("/docs", "Documentation", 2), new SectionStats("/", null, 1)] },
         };
-        var index = new IndexSummary(manifest.BuiltAt, null, false, 3, 4, "json", 1, false, "m", 4, null, manifest.Stats);
+        var index = new IndexSummary(manifest.BuiltAt, null, false, 3, 4, "json", 1, false, "m", 4, null, IndexStatsSummary.From(manifest.Stats, true, true));
         var info = new SiteInfo("ok", new SiteSummary("Example", manifest.SiteUrl, manifest.SiteDescription, "en"), index,
             new EndpointUrls("https://mcp.example.test/mcp", false, null, "https://mcp.example.test/openapi/v1.json", null), new ServerSummary("s", "1"));
         PageDocument[] pages = [.. TestIndex.Pages, new() { Id = 4, Url = "https://example.test/docs/brackets", Title = "Use [square] brackets", Markdown = "x" }];

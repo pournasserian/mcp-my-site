@@ -36,6 +36,10 @@ All notable changes to this project are recorded here. The format follows
   `mcpmysite.visitor`, a hash of the client address and user agent with a random salt that is
   replaced daily and never stored, so a dashboard can count distinct visitors without the server
   keeping addresses (#45).
+- Finer `Ui` switches, all on by default: `Ui:LandingPage`, `Ui:ApiReference`, `Ui:ShowSearchApi`,
+  `Ui:ShowSearchDetails` and `Ui:ShowBuildDetails` hide one part of the pages each without turning
+  them all off. What is hidden on the page is also left out of `/api/info`, `llms.txt`,
+  `sitemap.xml` and the schema.org data, and the startup line names it (#60).
 
 ### Removed
 
@@ -43,7 +47,6 @@ All notable changes to this project are recorded here. The format follows
   at the MCP Inspector instead, with the server's URL and header filled in and a CLI line for a
   scripted check. `/playground` redirects to that section for now; the redirect goes away in a later
   release (#61).
-
 ### Changed
 
 - The architecture document describes `ResponseHeadersMiddleware` and `HeadSupport`, the response
