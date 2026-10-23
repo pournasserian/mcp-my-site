@@ -8,6 +8,11 @@ All notable changes to this project are recorded here. The format follows
 
 ### Changed
 
+- The architecture document describes `ResponseHeadersMiddleware` and `HeadSupport`, the response
+  headers and `HEAD` handling, and lists the `Pages/` folder and the `Api/` files that had been added
+  since it was written. The user guide names the current version instead of "0.1 (V1)" and uses the
+  current image tag in its examples. The indexer's default `Crawl:UserAgent` is now
+  `McpMySiteIndexer/0.2` (#63).
 - The user guide gives the current reason for the 2,000-character cap on server instructions:
   Claude Code cuts them at 4,096 characters (2,048 before v2.1.296), so the cap keeps the text
   whole in both (#54).
