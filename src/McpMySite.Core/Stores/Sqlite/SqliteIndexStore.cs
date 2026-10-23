@@ -102,8 +102,7 @@ public sealed class SqliteIndexStore : IIndexStore
             var chunks = await LoadChunksAsync(fused.Select(f => f.ChunkId).ToList(), cancellationToken);
             var pages = await LoadPagesAsync(chunks.Values.Select(c => c.PageId).Distinct().ToList(), cancellationToken);
 
-            var hits = HybridRanker.ToPageHits(fused, id => chunks[id], id => pages[id], request.Query, request.Limit);
-            return new SearchResponse { Hits = hits, KeywordOnly = request.QueryVector is null };
+            return HybridRanker.ToPageHits(fused, id => chunks[id], id => pages[id], request);
         }
         finally
         {
