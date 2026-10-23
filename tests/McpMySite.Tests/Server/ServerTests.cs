@@ -192,6 +192,18 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         Assert.All(new[] { all, firstPage, secondPage, pastTheEnd }, r => Assert.Equal(2, r.GetProperty("total").GetInt32()));
     }
 
+    [Fact]
+    public async Task McpSearchReportsWhenTheIndexWasBuilt()
+    {
+        var search = await McpSearchAsync(new { query = "rockets", limit = 1 });
+        Assert.Equal(new DateTimeOffset(2026, 10, 10, 12, 0, 0, TimeSpan.Zero), search.GetProperty("indexedAt").GetDateTimeOffset());
+
+        var tools = await McpCallAsync(new { jsonrpc = "2.0", id = 5, method = "tools/list" });
+        var schema = tools.GetProperty("tools").EnumerateArray().Single(t => t.GetProperty("name").GetString() == "search").GetProperty("outputSchema");
+        Assert.Equal("date-time", schema.GetProperty("properties").GetProperty("indexedAt").GetProperty("format").GetString());
+        Assert.Contains("indexedAt", schema.GetProperty("required").EnumerateArray().Select(r => r.GetString()));
+    }
+
     private async Task<JsonElement> McpSearchAsync(object arguments)
     {
         var result = await McpCallAsync(new { jsonrpc = "2.0", id = 4, method = "tools/call", @params = new { name = "search", arguments } });
@@ -400,7 +412,7 @@ public class SiteToolsTests
         var description = McpMySite.Server.Mcp.SiteTools.SearchDescription(manifest);
 
         Assert.StartsWith("Searches the website Example (https://example.test/): Rockets and widgets. x", description);
-        Assert.Contains("x… Hybrid keyword and semantic search over its 3 pages", description);
+        Assert.Contains("x… Hybrid keyword and semantic search over its 3 pages, indexed on 2026-10-10;", description);
         Assert.Contains("call again with offset", description);
     }
 
@@ -497,5 +509,90 @@ public class SearchOffsetCapTests : IAsyncLifetime
             ? text.Split('\n').First(l => l.StartsWith("data:"))[5..].Trim()
             : text;
         return JsonDocument.Parse(json).RootElement.GetProperty("result").GetProperty("structuredContent");
+    }
+}
+
+/// <summary>The server polling its index folder every second, so a rebuild can be swapped in during a test.</summary>
+public class IndexReloadTests : IAsyncLifetime
+{
+    private static readonly DateTimeOffset Rebuilt = new(2026, 11, 1, 8, 30, 0, TimeSpan.Zero);
+    private string _indexDirectory = null!;
+    private WebApplicationFactory<server::Program> _factory = null!;
+    private HttpClient _client = null!;
+
+    public async Task InitializeAsync()
+    {
+        _indexDirectory = await TestIndex.WriteAsync(IndexFormat.JsonStoreType);
+        _factory = new WebApplicationFactory<server::Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Index:Path"] = _indexDirectory,
+                ["Index:PollIntervalSeconds"] = "1",
+                ["Embeddings:ApiKeyEnvironmentVariable"] = "MCPMYSITE_TEST_KEY_THAT_IS_NOT_SET",
+                ["RateLimiting:PermitPerMinute"] = "1000",
+            }));
+        });
+        _client = _factory.CreateClient();
+
+        for (var i = 0; i < 100; i++)
+        {
+            if ((await _client.GetAsync("/healthz")).IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException("Index did not load.");
+    }
+
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        _factory.Dispose();
+        return Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task ToolDescriptionAndSearchFollowAHotSwap()
+    {
+        Assert.Contains("indexed on 2026-10-10;", await SearchDescriptionAsync());
+
+        await IndexStoreOpener.CreateWriter(IndexFormat.JsonStoreType).WriteAsync(
+            _indexDirectory, TestIndex.Manifest(IndexFormat.JsonStoreType, Rebuilt), TestIndex.Pages, TestIndex.Chunks, TestIndex.Vectors);
+
+        string description = string.Empty;
+        for (var i = 0; i < 200 && !description.Contains("indexed on 2026-11-01;"); i++)
+        {
+            await Task.Delay(100);
+            description = await SearchDescriptionAsync();
+        }
+
+        Assert.Contains("indexed on 2026-11-01;", description);
+        var search = await McpResultAsync(new { jsonrpc = "2.0", id = 2, method = "tools/call", @params = new { name = "search", arguments = new { query = "rockets", limit = 1 } } });
+        Assert.Equal(Rebuilt, search.GetProperty("structuredContent").GetProperty("indexedAt").GetDateTimeOffset());
+    }
+
+    private async Task<string> SearchDescriptionAsync()
+    {
+        var result = await McpResultAsync(new { jsonrpc = "2.0", id = 1, method = "tools/list" });
+        return result.GetProperty("tools").EnumerateArray().Single(t => t.GetProperty("name").GetString() == "search").GetProperty("description").GetString()!;
+    }
+
+    private async Task<JsonElement> McpResultAsync(object request)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent.Create(request) };
+        message.Headers.Accept.ParseAdd("application/json");
+        message.Headers.Accept.ParseAdd("text/event-stream");
+        var response = await _client.SendAsync(message);
+        var text = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {text}");
+        var json = response.Content.Headers.ContentType?.MediaType == "text/event-stream"
+            ? text.Split('\n').First(l => l.StartsWith("data:"))[5..].Trim()
+            : text;
+        return JsonDocument.Parse(json).RootElement.GetProperty("result");
     }
 }

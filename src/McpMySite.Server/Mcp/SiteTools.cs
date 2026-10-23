@@ -5,7 +5,7 @@ namespace McpMySite.Server.Mcp;
 /// connectors and deep research (results carry an id, fetch takes it and returns text), and still accept a url.
 /// </summary>
 [McpServerToolType]
-public sealed class SiteTools(SiteSearchService search, IOptions<SearchApiOptions> searchApi)
+public sealed class SiteTools(SiteSearchService search, IndexHolder holder, IOptions<SearchApiOptions> searchApi)
 {
     private const string Channel = "mcp";
     private const string SearchToolName = "search";
@@ -30,6 +30,7 @@ public sealed class SiteTools(SiteSearchService search, IOptions<SearchApiOption
             return new SearchToolResult(
                 query,
                 response.KeywordOnly,
+                holder.Require().Manifest.BuiltAt,
                 response.Total,
                 response.HasMore,
                 response.Hits.Select(h => new SearchToolHit(h.Url, h.Title, h.Url, h.Snippet, h.HeadingPath.Count == 0 ? null : string.Join(" > ", h.HeadingPath), h.Score)).ToList());
@@ -102,16 +103,18 @@ public sealed class SiteTools(SiteSearchService search, IOptions<SearchApiOption
 
         var site = about.Length > 0 ? $"{name} ({manifest.SiteUrl}): {about}" : $"{name} ({manifest.SiteUrl}).";
         var method = manifest.KeywordOnly ? "Keyword search" : "Hybrid keyword and semantic search";
+        var indexed = manifest.BuiltAt.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         return $"Searches the website {site} "
-            + $"{method} over its {manifest.PageCount} pages; returns the best matching pages with a short snippet each. "
+            + $"{method} over its {manifest.PageCount} pages, indexed on {indexed}; returns the best matching pages with a short snippet each. "
             + "When hasMore is true, call again with offset set to the previous offset plus limit to see further results. "
             + "Call fetch with a result's id or URL to read the whole page.";
     }
 }
 
+/// <param name="IndexedAt">When the index was built, in UTC. Pages changed on the site since then are not reflected.</param>
 /// <param name="Total">Distinct pages that matched, counting those before and after this page of results.</param>
 /// <param name="HasMore">True while a larger offset would return further results.</param>
-public sealed record SearchToolResult(string Query, bool KeywordOnly, int Total, bool HasMore, IReadOnlyList<SearchToolHit> Results);
+public sealed record SearchToolResult(string Query, bool KeywordOnly, DateTimeOffset IndexedAt, int Total, bool HasMore, IReadOnlyList<SearchToolHit> Results);
 
 /// <param name="Id">Identifier to pass to fetch. Currently the page URL.</param>
 public sealed record SearchToolHit(string Id, string Title, string Url, string Snippet, string? Section, double Score);
