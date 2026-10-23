@@ -80,7 +80,7 @@ public sealed partial class MarkdownChunker(int maxChars = 1500, int minChars = 
             {
                 FlushParagraph();
                 var level = heading.Groups[1].Value.Length;
-                var text = heading.Groups[2].Value.Trim();
+                var text = PlainText(heading.Groups[2].Value.Trim());
                 while (path.Count > 0 && path[^1].Level >= level)
                 {
                     path.RemoveAt(path.Count - 1);
@@ -227,8 +227,33 @@ public sealed partial class MarkdownChunker(int maxChars = 1500, int minChars = 
         return a.Count <= b.Count && b.Take(a.Count).SequenceEqual(a) ? a : b;
     }
 
+    /// <summary>
+    /// The text of a heading without its inline Markdown, so a heading that is a link, or carries code or emphasis,
+    /// enters the heading path the way a reader sees it rather than as source.
+    /// </summary>
+    public static string PlainText(string heading)
+    {
+        var text = ImageRegex().Replace(heading, "$1");
+        text = LinkRegex().Replace(text, "$1");
+        text = CodeRegex().Replace(text, "$1");
+        text = EmphasisRegex().Replace(text, "$2");
+        return text.Trim();
+    }
+
     [GeneratedRegex(@"^(#{1,6})\s+(.*?)\s*#*\s*$")]
     private static partial Regex HeadingRegex();
+
+    [GeneratedRegex(@"!\[([^\]]*)\]\([^)]*\)")]
+    private static partial Regex ImageRegex();
+
+    [GeneratedRegex(@"\[([^\]]+)\](?:\([^)]*\)|\[[^\]]*\])")]
+    private static partial Regex LinkRegex();
+
+    [GeneratedRegex(@"`+([^`]+)`+")]
+    private static partial Regex CodeRegex();
+
+    [GeneratedRegex(@"(?<!\w)(\*\*|__|\*|_|~~)(\S(?:.*?\S)?)\1(?!\w)")]
+    private static partial Regex EmphasisRegex();
 
     [GeneratedRegex(@"^\s{0,3}(```|~~~)")]
     private static partial Regex FenceRegex();

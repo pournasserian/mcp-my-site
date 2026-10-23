@@ -6,6 +6,18 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The user guide gives the current reason for the 2,000-character cap on server instructions:
+  Claude Code cuts them at 4,096 characters (2,048 before v2.1.296), so the cap keeps the text
+  whole in both (#54).
+
+### Fixed
+
+- A heading that is a link, or carries inline code or emphasis, enters a chunk's heading path as
+  plain text instead of Markdown source, so the `section` of a search result reads `FluentCMS`
+  rather than `[FluentCMS](https://...)` (#52).
+
 ### Security
 
 - Every response carries `Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options: DENY`,
