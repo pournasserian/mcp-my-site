@@ -27,6 +27,8 @@ services.AddSingleton<SiteSearchService>();
 services.AddSiteOpenApi();
 services.AddRazorComponents();
 services.AddSingleton<LlmsTxt>();
+services.AddSingleton(TimeProvider.System);
+services.AddSingleton<VisitorSalt>();
 
 // Numbers are plain JSON numbers; the web default also accepts strings, which would make every OpenAPI number "integer or string".
 services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
@@ -131,6 +133,7 @@ if (rateLimitOptions.UseForwardedHeaders)
 // proxy saw. Before the rate limiter, which partitions on the address resolved here. Both middlewares pass requests
 // straight through unless Cloudflare:TrustConnectingIp or Telemetry:LogBodies asks for them.
 app.UseMiddleware<CloudflareClientIpMiddleware>();
+app.UseMiddleware<VisitorKeyMiddleware>();
 app.UseMiddleware<BodyLoggingMiddleware>();
 app.UseMiddleware<ResponseHeadersMiddleware>();
 
@@ -226,7 +229,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
     var telemetryOptions = app.Services.GetRequiredService<IOptions<TelemetryOptions>>().Value;
     var cloudflareOptions = app.Services.GetRequiredService<IOptions<CloudflareOptions>>().Value;
     startupLogger.LogInformation(
-        "mcp-my-site {Version} ({Environment}): MCP at {McpPath} (API key {ApiKey}), search API {SearchApi}, pages {Pages}, embeddings at {EmbeddingEndpoint}, telemetry export {Exporter}, metrics {Metrics}, query text logging {LogQueryText}, body logging {LogBodies}, Cloudflare client IP {CloudflareClientIp}",
+        "mcp-my-site {Version} ({Environment}): MCP at {McpPath} (API key {ApiKey}), search API {SearchApi}, pages {Pages}, embeddings at {EmbeddingEndpoint}, telemetry export {Exporter}, metrics {Metrics}, query text logging {LogQueryText}, body logging {LogBodies}, visitor key {VisitorId}, Cloudflare client IP {CloudflareClientIp}",
         typeof(Program).Assembly.GetName().Version?.ToString(3),
         app.Environment.EnvironmentName,
         mcpOptions.Path,
@@ -238,6 +241,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
         telemetryOptions.Metrics,
         telemetryOptions.LogQueryText ? "on" : "off",
         telemetryOptions.LogBodies ? "on" : "off",
+        telemetryOptions.VisitorId ? "on" : "off",
         cloudflareOptions.TrustConnectingIp && cloudflareOptions.TrustedNetworks.Length > 0 ? "on" : "off");
 });
 
