@@ -47,6 +47,8 @@ public sealed class SearchApiOptions
 
     public int MaxLimit { get; set; } = 20;
 
+    public int MaxOffset { get; set; } = 100;
+
     public int MaxQueryLength { get; set; } = 500;
 }
 
@@ -87,6 +89,12 @@ public sealed class TelemetryOptions
 
     /// <summary>Where traces, metrics and logs are exported on top of the console log.</summary>
     public TelemetryExporter Exporter { get; set; } = TelemetryExporter.Auto;
+
+    /// <summary>
+    /// The metric groups to export, as a comma-separated list of <see cref="MetricGroups"/> names. Instruments of
+    /// the other groups are dropped before export, whichever instrumentation or exporter registered them.
+    /// </summary>
+    public MetricGroups Metrics { get; set; } = MetricGroups.All;
 
     /// <summary>
     /// Include the query text, and fetch targets that match no page, in logs and traces. Off by default because

@@ -13,9 +13,20 @@ All notable changes to this project are recorded here. The format follows
   and one `remotes` entry with the public MCP URL, the supported protocol versions and the
   `Authorization` header when `Mcp:ApiKey` is set. Cached for an hour with an `ETag`, open to every
   origin, rate limited, and reachable without the key (#53).
+- The search API and the MCP `search` tool page through results: `offset` skips that many pages
+  of the same ranking, capped by the new `SearchApi:MaxOffset` setting (default 100), and every
+  response carries `total` and `hasMore` (#62).
+- `Telemetry:Metrics` names the metric groups the server exports (`Server`, `AspNetCore`,
+  `HttpClient`, `Runtime`; default all), so a deployment can drop the HTTP client and runtime series
+  that make up most of what a workspace ingests. The startup line names the groups in use (#46).
 
 ### Changed
 
+- The architecture document describes `ResponseHeadersMiddleware` and `HeadSupport`, the response
+  headers and `HEAD` handling, and lists the `Pages/` folder and the `Api/` files that had been added
+  since it was written. The user guide names the current version instead of "0.1 (V1)" and uses the
+  current image tag in its examples. The indexer's default `Crawl:UserAgent` is now
+  `McpMySiteIndexer/0.2` (#63).
 - The user guide gives the current reason for the 2,000-character cap on server instructions:
   Claude Code cuts them at 4,096 characters (2,048 before v2.1.296), so the cap keeps the text
   whole in both (#54).

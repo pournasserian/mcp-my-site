@@ -2,6 +2,8 @@ namespace McpMySite.Core.Model;
 
 public sealed record SearchRequest
 {
+    private const int MinCandidateCount = 50;
+
     public required string Query { get; init; }
 
     /// <summary>Embedding of <see cref="Query"/>. When null the store runs keyword search only.</summary>
@@ -10,8 +12,14 @@ public sealed record SearchRequest
     /// <summary>Maximum number of pages to return.</summary>
     public int Limit { get; init; } = 10;
 
-    /// <summary>How many chunks each ranker contributes before merging.</summary>
-    public int CandidateCount { get; init; } = 50;
+    /// <summary>Pages to skip before the first hit, for paging.</summary>
+    public int Offset { get; init; }
+
+    /// <summary>
+    /// How many chunks each ranker contributes before merging: at least 50, and five per requested page position,
+    /// so every page of one query is cut from the same ranking.
+    /// </summary>
+    public int CandidateCount => Math.Max(MinCandidateCount, (Offset + Limit) * 5);
 }
 
 public sealed record SearchHit
@@ -41,4 +49,10 @@ public sealed record SearchResponse
 
     /// <summary>True when the vector half of the hybrid search did not run.</summary>
     public required bool KeywordOnly { get; init; }
+
+    /// <summary>Distinct pages that matched within the candidate pool, including those before and after this page of hits.</summary>
+    public required int Total { get; init; }
+
+    /// <summary>True when a larger offset would return further hits.</summary>
+    public required bool HasMore { get; init; }
 }

@@ -115,7 +115,7 @@ public sealed class CrawlConfig
 
     public int TimeoutSeconds { get; set; } = 30;
 
-    public string UserAgent { get; set; } = "McpMySiteIndexer/0.1 (+https://github.com/pournasserian/mcp-my-site)";
+    public string UserAgent { get; set; } = "McpMySiteIndexer/0.2 (+https://github.com/pournasserian/mcp-my-site)";
 }
 
 public sealed class ChunkingConfig

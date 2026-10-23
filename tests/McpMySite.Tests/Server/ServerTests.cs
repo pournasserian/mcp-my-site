@@ -90,6 +90,25 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
     }
 
     [Fact]
+    public async Task SearchApiPagesThroughTheSameRanking()
+    {
+        var all = await Client.GetFromJsonAsync<JsonElement>("/api/search?q=rockets&limit=20");
+        var firstPage = await Client.GetFromJsonAsync<JsonElement>("/api/search?q=rockets&limit=1");
+        var secondPage = await Client.GetFromJsonAsync<JsonElement>("/api/search?q=rockets&limit=1&offset=1");
+        var pastTheEnd = await Client.GetFromJsonAsync<JsonElement>("/api/search?q=rockets&limit=1&offset=50");
+
+        Assert.Equal(2, all.GetProperty("results").GetArrayLength());
+        Assert.False(all.GetProperty("hasMore").GetBoolean());
+        Assert.True(firstPage.GetProperty("hasMore").GetBoolean());
+        Assert.Equal(all.GetProperty("results")[0].GetProperty("url").GetString(), firstPage.GetProperty("results")[0].GetProperty("url").GetString());
+        Assert.Equal(all.GetProperty("results")[1].GetProperty("url").GetString(), secondPage.GetProperty("results")[0].GetProperty("url").GetString());
+        Assert.False(secondPage.GetProperty("hasMore").GetBoolean());
+        Assert.Equal(0, pastTheEnd.GetProperty("results").GetArrayLength());
+        Assert.False(pastTheEnd.GetProperty("hasMore").GetBoolean());
+        Assert.All(new[] { all, firstPage, secondPage, pastTheEnd }, r => Assert.Equal(2, r.GetProperty("total").GetInt32()));
+    }
+
+    [Fact]
     public async Task SearchApiRejectsMissingQuery()
     {
         var response = await Client.GetAsync("/api/search");
@@ -154,6 +173,29 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
             Assert.Equal("Rockets", page.GetProperty("title").GetString());
             Assert.Contains("liquid oxygen", page.GetProperty("text").GetString());
         }
+    }
+
+    [Fact]
+    public async Task McpSearchPagesWithOffset()
+    {
+        var all = await McpSearchAsync(new { query = "rockets", limit = 3 });
+        var firstPage = await McpSearchAsync(new { query = "rockets", limit = 1 });
+        var secondPage = await McpSearchAsync(new { query = "rockets", limit = 1, offset = 1 });
+        var pastTheEnd = await McpSearchAsync(new { query = "rockets", limit = 1, offset = 50 });
+
+        Assert.Equal(2, all.GetProperty("results").GetArrayLength());
+        Assert.True(firstPage.GetProperty("hasMore").GetBoolean());
+        Assert.Equal(all.GetProperty("results")[1].GetProperty("url").GetString(), secondPage.GetProperty("results")[0].GetProperty("url").GetString());
+        Assert.False(secondPage.GetProperty("hasMore").GetBoolean());
+        Assert.Equal(0, pastTheEnd.GetProperty("results").GetArrayLength());
+        Assert.False(pastTheEnd.GetProperty("hasMore").GetBoolean());
+        Assert.All(new[] { all, firstPage, secondPage, pastTheEnd }, r => Assert.Equal(2, r.GetProperty("total").GetInt32()));
+    }
+
+    private async Task<JsonElement> McpSearchAsync(object arguments)
+    {
+        var result = await McpCallAsync(new { jsonrpc = "2.0", id = 4, method = "tools/call", @params = new { name = "search", arguments } });
+        return result.GetProperty("structuredContent");
     }
 
     [Fact]
@@ -257,6 +299,12 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         Assert.True(q.GetProperty("required").GetBoolean());
         var limit = parameters.Single(p => p.GetProperty("name").GetString() == "limit");
         Assert.Equal("integer", limit.GetProperty("schema").GetProperty("type").GetString());
+        var offset = parameters.Single(p => p.GetProperty("name").GetString() == "offset");
+        Assert.Equal("integer", offset.GetProperty("schema").GetProperty("type").GetString());
+
+        var responseSchema = document.GetProperty("components").GetProperty("schemas").GetProperty("SearchApiResponse").GetProperty("properties");
+        Assert.Equal("integer", responseSchema.GetProperty("total").GetProperty("type").GetString());
+        Assert.Equal("boolean", responseSchema.GetProperty("hasMore").GetProperty("type").GetString());
     }
 
     [Fact]
@@ -353,6 +401,7 @@ public class SiteToolsTests
 
         Assert.StartsWith("Searches the website Example (https://example.test/): Rockets and widgets. x", description);
         Assert.Contains("x… Hybrid keyword and semantic search over its 3 pages", description);
+        Assert.Contains("call again with offset", description);
     }
 
     [Fact]
@@ -366,5 +415,87 @@ public class SiteToolsTests
         Assert.Equal("Generic.", search.Description);
         Assert.StartsWith("Searches the website Example", result.Tools[0].Description);
         Assert.Same(fetch, result.Tools[1]);
+    }
+}
+
+/// <summary>The server with SearchApi:MaxOffset set to 1, so clamping is visible on a three-page index.</summary>
+public class SearchOffsetCapTests : IAsyncLifetime
+{
+    private WebApplicationFactory<server::Program> _factory = null!;
+    private HttpClient _client = null!;
+
+    public async Task InitializeAsync()
+    {
+        var indexDirectory = await TestIndex.WriteAsync(IndexFormat.JsonStoreType);
+        _factory = new WebApplicationFactory<server::Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Index:Path"] = indexDirectory,
+                ["Index:PollIntervalSeconds"] = "0",
+                ["Embeddings:ApiKeyEnvironmentVariable"] = "MCPMYSITE_TEST_KEY_THAT_IS_NOT_SET",
+                ["SearchApi:MaxOffset"] = "1",
+                ["RateLimiting:PermitPerMinute"] = "1000",
+            }));
+        });
+        _client = _factory.CreateClient();
+
+        for (var i = 0; i < 100; i++)
+        {
+            if ((await _client.GetAsync("/healthz")).IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException("Index did not load.");
+    }
+
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        _factory.Dispose();
+        return Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task SearchApiClampsOffsetToMaxOffset()
+    {
+        var second = await _client.GetFromJsonAsync<JsonElement>("/api/search?q=rockets&limit=1&offset=1");
+        var clamped = await _client.GetFromJsonAsync<JsonElement>("/api/search?q=rockets&limit=1&offset=50");
+        var negative = await _client.GetFromJsonAsync<JsonElement>("/api/search?q=rockets&limit=1&offset=-3");
+
+        Assert.Equal(second.GetProperty("results")[0].GetProperty("url").GetString(), clamped.GetProperty("results")[0].GetProperty("url").GetString());
+        Assert.Equal("https://example.test/docs/rockets", negative.GetProperty("results")[0].GetProperty("url").GetString());
+    }
+
+    [Fact]
+    public async Task McpSearchClampsOffsetToMaxOffset()
+    {
+        var second = await SearchAsync(1);
+        var clamped = await SearchAsync(50);
+
+        Assert.Equal(second.GetProperty("results")[0].GetProperty("url").GetString(), clamped.GetProperty("results")[0].GetProperty("url").GetString());
+        Assert.False(clamped.GetProperty("hasMore").GetBoolean());
+    }
+
+    private async Task<JsonElement> SearchAsync(int offset)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = JsonContent.Create(new { jsonrpc = "2.0", id = 1, method = "tools/call", @params = new { name = "search", arguments = new { query = "rockets", limit = 1, offset } } }),
+        };
+        message.Headers.Accept.ParseAdd("application/json");
+        message.Headers.Accept.ParseAdd("text/event-stream");
+        var response = await _client.SendAsync(message);
+        var text = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {text}");
+        var json = response.Content.Headers.ContentType?.MediaType == "text/event-stream"
+            ? text.Split('\n').First(l => l.StartsWith("data:"))[5..].Trim()
+            : text;
+        return JsonDocument.Parse(json).RootElement.GetProperty("result").GetProperty("structuredContent");
     }
 }
