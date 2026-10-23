@@ -8,6 +8,9 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- The MCP `search` tool tells the model how old the index is: its description ends the page count
+  with "indexed on YYYY-MM-DD" and every result carries `indexedAt`, the build time of the loaded
+  index. Both follow a hot swap without a restart (#72).
 - The indexer skips pages that have not changed since the previous build. A page store next to the
   embedding cache keeps each page's `ETag`, `Last-Modified`, sitemap `lastmod`, extraction and links;
   an unchanged `lastmod` skips the request, and otherwise the crawler sends `If-None-Match` /

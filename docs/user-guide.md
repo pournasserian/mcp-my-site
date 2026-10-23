@@ -817,8 +817,9 @@ URL, and the server picks it up within the poll interval.
   to turn it off; this server never sends `notifications/message`. The `2026-07-28` revision retires
   logging, and the `server/discover` answer for that revision carries tools only.
 - `initialize` returns the server name and version and the instructions described in section 6.8.
-- `tools/list` describes `search` with the loaded site's name, URL, description and page count, so a
-  model knows which site the server covers even when its client ignores the instructions.
+- `tools/list` describes `search` with the loaded site's name, URL, description, page count and index
+  date, so a model knows which site the server covers, and how old the snapshot is, even when its
+  client ignores the instructions.
 - The tool shapes follow the `search` and `fetch` contract ChatGPT uses for connectors and deep
   research: every search result has an `id`, and `fetch` takes that `id` and returns the page as
   `text`. Other clients can keep passing a `url`.
@@ -837,6 +838,7 @@ Returns structured content:
 {
   "query": "contact email",
   "keywordOnly": false,
+  "indexedAt": "2026-10-20T03:12:45+00:00",
   "total": 1,
   "hasMore": false,
   "results": [
@@ -849,7 +851,8 @@ Returns structured content:
 ```
 
 `keywordOnly` is `true` when the result came from keyword search alone: the index is keyword-only
-(section 5.5) or the query could not be embedded. Scores are reciprocal-rank-fusion scores, useful for ordering, not as probabilities. `id` is
+(section 5.5) or the query could not be embedded. `indexedAt` is when the index was built, so the model
+can say how old the snapshot is when asked; pages changed on the site since then are not reflected. Scores are reciprocal-rank-fusion scores, useful for ordering, not as probabilities. `id` is
 what to pass to `fetch`; today it is the page URL. `total` is the number of distinct pages that matched
 and `hasMore` is `true` while a larger `offset` would return further results; the tool description
 tells the model to call again with `offset` set to the previous offset plus `limit`. Every page of
