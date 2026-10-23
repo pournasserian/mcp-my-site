@@ -735,6 +735,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the MCP playground at `/playground`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
 | `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
 | `Ui:StaleAfterDays` | `30` | The landing page and `/api/info` flag the index as stale when it is older than this. `0` turns the flag off. |
+| `Ui:FrameAncestors` | `[]` | Origins allowed to embed the pages in a frame, as CSP `frame-ancestors` sources (`https://www.example.com`, `'self'`). Empty denies framing everywhere. Section 12. |
 | `RateLimiting:PermitPerMinute` | `60` | Requests per client IP per minute, shared across the MCP endpoint and the search API. Excess requests get `429`. |
 | `RateLimiting:UseForwardedHeaders` | `true` | Take the client IP from `X-Forwarded-For`, as set by most reverse proxies and platform ingresses. Set `false` when clients reach Kestrel directly. |
 | `Cloudflare:TrustConnectingIp` | `true` | Behind Cloudflare, take the client IP from `CF-Connecting-IP` and tag requests with `CF-Ray` and `CF-IPCountry`. Only believed when the connection comes from `Cloudflare:TrustedNetworks`, so it is inert anywhere else. Section 7.6. |
@@ -1407,6 +1408,12 @@ cost is the hosting plan.
   built from quoted tokens, never from raw input. JSON-RPC errors do not include stack traces.
 - **Crawling politely.** The indexer identifies itself, obeys `robots.txt` and `noindex`, retries only
   once, and lets you add a delay. Index only sites you own or are allowed to index.
+- **Response headers.** Every response carries `Content-Security-Policy: frame-ancestors 'none'`
+  with `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: strict-origin-when-cross-origin`, so no other site can show the playground or the
+  landing page in an iframe and lure a visitor into clicking. `Ui:FrameAncestors` lists the origins
+  that may embed the pages; `X-Frame-Options` is then left out, since it cannot carry a list. MCP
+  clients and the search API's callers ignore these headers.
 - **Forwarded headers.** See section 7.6. The one setting that can weaken the rate limit is trusting
   `X-Forwarded-For` when there is no proxy. Behind Cloudflare, `CF-Connecting-IP` is believed only
   from Cloudflare's ranges; also limit who can reach the origin to those ranges at your ingress or
