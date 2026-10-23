@@ -8,6 +8,9 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- The MCP `search` tool tells clients how old the index is: its description names the build date
+  next to the page count ("… over its 240 pages, indexed on 2026-10-20; …") and every result carries
+  `indexedAt`, the manifest's `builtAt`. Both follow an index reload without a restart (#72).
 - The indexer skips pages that have not changed since the previous build. A page store next to the
   embedding cache keeps each page's `ETag`, `Last-Modified`, sitemap `lastmod`, extraction and links;
   an unchanged `lastmod` skips the request, and otherwise the crawler sends `If-None-Match` /

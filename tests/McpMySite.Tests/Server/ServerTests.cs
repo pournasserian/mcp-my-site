@@ -2,6 +2,7 @@ extern alias server;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -219,12 +220,26 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
 
         var description = tools["search"].GetProperty("description").GetString();
         Assert.StartsWith("Searches the website Example (https://example.test/).", description);
-        Assert.Contains("3 pages", description);
+        Assert.Contains("3 pages, indexed on 2026-10-10;", description);
 
         var fetchInput = tools["fetch"].GetProperty("inputSchema");
         Assert.True(fetchInput.GetProperty("properties").TryGetProperty("id", out _));
         Assert.True(fetchInput.GetProperty("properties").TryGetProperty("url", out _));
         Assert.False(fetchInput.TryGetProperty("required", out var required) && required.GetArrayLength() > 0);
+    }
+
+    [Fact]
+    public async Task McpSearchReportsWhenTheIndexWasBuilt()
+    {
+        var search = await McpSearchAsync(new { query = "rockets" });
+        Assert.Equal(TestIndex.Manifest(IndexFormat.JsonStoreType).BuiltAt, search.GetProperty("indexedAt").GetDateTimeOffset());
+
+        var tools = await McpCallAsync(new { jsonrpc = "2.0", id = 8, method = "tools/list" });
+        var schema = tools.GetProperty("tools").EnumerateArray().Single(t => t.GetProperty("name").GetString() == "search").GetProperty("outputSchema");
+        var indexedAt = schema.GetProperty("properties").GetProperty("indexedAt");
+        Assert.Equal("string", indexedAt.GetProperty("type").GetString());
+        Assert.Equal("date-time", indexedAt.GetProperty("format").GetString());
+        Assert.Contains("indexedAt", schema.GetProperty("required").EnumerateArray().Select(r => r.GetString()));
     }
 
     [Fact]
@@ -405,6 +420,16 @@ public class SiteToolsTests
     }
 
     [Fact]
+    public void SearchDescriptionNamesTheBuildDate()
+    {
+        var manifest = TestIndex.Manifest(IndexFormat.JsonStoreType, builtAt: new DateTimeOffset(2026, 10, 20, 23, 30, 0, TimeSpan.Zero));
+
+        var description = McpMySite.Server.Mcp.SiteTools.SearchDescription(manifest);
+
+        Assert.Contains("over its 3 pages, indexed on 2026-10-20; returns", description);
+    }
+
+    [Fact]
     public void DescribeSiteLeavesSharedToolDefinitionsUntouched()
     {
         var search = new ModelContextProtocol.Protocol.Tool { Name = "search", Description = "Generic." };
@@ -497,5 +522,89 @@ public class SearchOffsetCapTests : IAsyncLifetime
             ? text.Split('\n').First(l => l.StartsWith("data:"))[5..].Trim()
             : text;
         return JsonDocument.Parse(json).RootElement.GetProperty("result").GetProperty("structuredContent");
+    }
+}
+
+/// <summary>The server with polling off, so a test can swap the index in the holder itself.</summary>
+public class IndexSwapTests : IAsyncLifetime
+{
+    private static readonly DateTimeOffset FirstBuild = new(2026, 10, 10, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset SecondBuild = new(2026, 10, 20, 8, 0, 0, TimeSpan.Zero);
+    private WebApplicationFactory<server::Program> _factory = null!;
+    private HttpClient _client = null!;
+
+    public async Task InitializeAsync()
+    {
+        var indexDirectory = await TestIndex.WriteAsync(IndexFormat.JsonStoreType, FirstBuild);
+        _factory = new WebApplicationFactory<server::Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Index:Path"] = indexDirectory,
+                ["Index:PollIntervalSeconds"] = "0",
+                ["Embeddings:ApiKeyEnvironmentVariable"] = "MCPMYSITE_TEST_KEY_THAT_IS_NOT_SET",
+                ["RateLimiting:PermitPerMinute"] = "1000",
+            }));
+        });
+        _client = _factory.CreateClient();
+
+        for (var i = 0; i < 100; i++)
+        {
+            if ((await _client.GetAsync("/healthz")).IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException("Index did not load.");
+    }
+
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        _factory.Dispose();
+        return Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task SwappedIndexChangesTheDateInToolsListAndSearch()
+    {
+        Assert.Contains("indexed on 2026-10-10;", await SearchDescriptionAsync());
+        Assert.Equal(FirstBuild, await IndexedAtAsync());
+
+        var holder = _factory.Services.GetRequiredService<McpMySite.Server.Index.IndexHolder>();
+        holder.Swap(await IndexStoreOpener.OpenAsync(await TestIndex.WriteAsync(IndexFormat.JsonStoreType, SecondBuild)));
+
+        Assert.Contains("indexed on 2026-10-20;", await SearchDescriptionAsync());
+        Assert.Equal(SecondBuild, await IndexedAtAsync());
+    }
+
+    private async Task<string?> SearchDescriptionAsync()
+    {
+        var result = await McpAsync(new { jsonrpc = "2.0", id = 1, method = "tools/list" });
+        return result.GetProperty("tools").EnumerateArray().Single(t => t.GetProperty("name").GetString() == "search").GetProperty("description").GetString();
+    }
+
+    private async Task<DateTimeOffset> IndexedAtAsync()
+    {
+        var result = await McpAsync(new { jsonrpc = "2.0", id = 2, method = "tools/call", @params = new { name = "search", arguments = new { query = "rockets" } } });
+        return result.GetProperty("structuredContent").GetProperty("indexedAt").GetDateTimeOffset();
+    }
+
+    private async Task<JsonElement> McpAsync(object request)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent.Create(request) };
+        message.Headers.Accept.ParseAdd("application/json");
+        message.Headers.Accept.ParseAdd("text/event-stream");
+        var response = await _client.SendAsync(message);
+        var text = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {text}");
+        var json = response.Content.Headers.ContentType?.MediaType == "text/event-stream"
+            ? text.Split('\n').First(l => l.StartsWith("data:"))[5..].Trim()
+            : text;
+        return JsonDocument.Parse(json).RootElement.GetProperty("result");
     }
 }
