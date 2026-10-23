@@ -752,6 +752,11 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:MaxOffset` | `100` | Upper bound for `offset`, on the search API and the MCP `search` tool. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
 | `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
+| `Ui:LandingPage` | `true` | Serve `/` as the landing page. Off, `/` is the short text summary and a browser opening `Mcp:Path` is no longer redirected to it. |
+| `Ui:ApiReference` | `true` | Serve the interactive API reference at `/docs`. The OpenAPI document is served either way. |
+| `Ui:ShowSearchApi` | `true` | Mention the search API on the landing page, in `/api/info`, `llms.txt` and the page's schema.org data. The endpoint itself follows `SearchApi:Enabled`. |
+| `Ui:ShowSearchDetails` | `true` | Show how search works: keyword-only or hybrid, embedding model and dimensions, on the page and in `/api/info`. |
+| `Ui:ShowBuildDetails` | `true` | Show the "Last build" section and the build numbers in `/api/info`: source, duration, pages fetched and skipped, errors, embeddings, store and indexer version. Pages and build date stay. |
 | `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
 | `Ui:StaleAfterDays` | `30` | The landing page and `/api/info` flag the index as stale when it is older than this. `0` turns the flag off. |
 | `Ui:FrameAncestors` | `[]` | Origins allowed to embed the pages in a frame, as CSP `frame-ancestors` sources (`https://www.example.com`, `'self'`). Empty denies framing everywhere. Section 12. |
@@ -1007,6 +1012,18 @@ can also publish a copy at your site's own `/llms.txt`.
 
 Indexes from indexers older than this feature have no build statistics; the page then shows the
 manifest's page and chunk counts and build date only. Rebuild to get the rest.
+
+**Showing less.** `Ui:Enabled` is the master switch; the finer `Ui` settings keep the pages but hide
+parts of them. `Ui:LandingPage` off makes `/` the text summary (the API reference, `llms.txt` and
+`sitemap.xml` stay); `Ui:ApiReference` off drops `/docs`; `Ui:ShowSearchApi` off leaves the search
+API out of the page, `/api/info`, `llms.txt` and the schema.org data; `Ui:ShowSearchDetails` off
+hides whether search is keyword-only or hybrid and the embedding model; `Ui:ShowBuildDetails` off
+drops the "Last build" section while "Pages" and "Last built" stay. Whatever is hidden on the page is
+also left out of `sitemap.xml`, `llms.txt`, the JSON-LD and `/api/info`, so it is not findable by
+another route, and the startup log line names what is hidden. Hiding is not access control:
+`/api/search` and `/openapi/v1.json` answer as before unless `SearchApi:Enabled` turns the endpoint
+off, and `/healthz` still reports the index. As environment variables the switches read
+`Ui__ShowBuildDetails=false`.
 
 ### 7.9 Testing the server
 
@@ -1791,10 +1808,10 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 | `GET {SearchApi:Path}?q=&limit=` | Search API (default `/api/search`) | yes | no |
 | `GET /api/info` | Site, index, build statistics and endpoint URLs as JSON | no | no |
 | `GET /openapi/v1.json` | OpenAPI document for the search API and `/api/info` | no | no |
-| `GET /docs` | Interactive API reference, when `Ui:Enabled` | no | no |
+| `GET /docs` | Interactive API reference, when `Ui:Enabled` and `Ui:ApiReference` | no | no |
 | `GET /healthz` | Health and index status | no | no |
-| `GET /` | Landing page, when `Ui:Enabled`; otherwise a one-line text description | no | no |
-| `GET /playground` | Redirect to `/#test`, when `Ui:Enabled`; kept for old links and removed in a later release | no | no |
+| `GET /` | Landing page, when `Ui:Enabled` and `Ui:LandingPage`; otherwise a one-line text description | no | no |
+| `GET /playground` | Redirect to `/#test`, when the landing page is served; kept for old links and removed in a later release | no | no |
 | `GET /llms.txt` | The indexed pages as a Markdown list for language models, when `Ui:Enabled` | no | no |
 | `GET /robots.txt` | Crawler rules | no | no |
 | `GET /sitemap.xml` | Pages for search engines, when `Ui:Enabled` | no | no |

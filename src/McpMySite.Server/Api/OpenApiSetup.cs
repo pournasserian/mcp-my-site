@@ -34,7 +34,7 @@ public static class OpenApiSetup
     public static void MapSiteOpenApi(this WebApplication app, UiOptions ui)
     {
         app.MapOpenApi(DocumentPath).AllowHead();
-        if (!ui.Enabled)
+        if (!ui.ServesApiReference)
         {
             return;
         }

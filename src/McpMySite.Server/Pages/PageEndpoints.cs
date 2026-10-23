@@ -22,6 +22,29 @@ public static class PageEndpoints
             return;
         }
 
+        if (ui.LandingPage)
+        {
+            MapLandingPage(app);
+        }
+
+        app.MapGet("/llms.txt", async (HttpRequest request, IndexHolder holder, LlmsTxt llms, IOptions<McpOptions> mcp, IOptions<SearchApiOptions> searchApi, IOptions<UiOptions> options, CancellationToken cancellationToken) =>
+        {
+            var baseUrl = SiteInfo.BaseUrl(request, options.Value);
+            var info = SiteInfo.Create(holder, mcp.Value, searchApi.Value, options.Value, baseUrl, DateTimeOffset.UtcNow);
+            var text = await llms.GetAsync(info, baseUrl, cancellationToken);
+            return text is null
+                ? Results.Text("No index is loaded yet.\n", "text/plain; charset=utf-8", statusCode: StatusCodes.Status503ServiceUnavailable)
+                : Results.Text(text, "text/plain; charset=utf-8");
+        }).AllowHead().ExcludeFromDescription();
+
+        app.MapGet("/sitemap.xml", (HttpRequest request, IndexHolder holder, IOptions<UiOptions> options) =>
+            Results.Text(Sitemap(SiteInfo.BaseUrl(request, options.Value), holder.Current?.Manifest.BuiltAt, options.Value), "application/xml; charset=utf-8"))
+            .AllowHead()
+            .ExcludeFromDescription();
+    }
+
+    private static void MapLandingPage(WebApplication app)
+    {
         app.MapGet("/", (HttpRequest request, IndexHolder holder, IOptions<McpOptions> mcp, IOptions<SearchApiOptions> searchApi, IOptions<UiOptions> options) =>
         {
             var baseUrl = SiteInfo.BaseUrl(request, options.Value);
@@ -36,21 +59,6 @@ public static class PageEndpoints
 
         // The playground was removed in 0.3.0; old links land on the landing page's test section until a later release.
         app.MapGet("/playground", () => Results.Redirect("/#test")).AllowHead().ExcludeFromDescription();
-
-        app.MapGet("/llms.txt", async (HttpRequest request, IndexHolder holder, LlmsTxt llms, IOptions<McpOptions> mcp, IOptions<SearchApiOptions> searchApi, IOptions<UiOptions> options, CancellationToken cancellationToken) =>
-        {
-            var baseUrl = SiteInfo.BaseUrl(request, options.Value);
-            var info = SiteInfo.Create(holder, mcp.Value, searchApi.Value, options.Value, baseUrl, DateTimeOffset.UtcNow);
-            var text = await llms.GetAsync(info, baseUrl, cancellationToken);
-            return text is null
-                ? Results.Text("No index is loaded yet.\n", "text/plain; charset=utf-8", statusCode: StatusCodes.Status503ServiceUnavailable)
-                : Results.Text(text, "text/plain; charset=utf-8");
-        }).AllowHead().ExcludeFromDescription();
-
-        app.MapGet("/sitemap.xml", (HttpRequest request, IndexHolder holder, IOptions<UiOptions> options) =>
-            Results.Text(Sitemap(SiteInfo.BaseUrl(request, options.Value), holder.Current?.Manifest.BuiltAt), "application/xml; charset=utf-8"))
-            .AllowHead()
-            .ExcludeFromDescription();
     }
 
     internal static string RobotsTxt(string baseUrl, bool pagesEnabled, string mcpPath)
@@ -69,10 +77,21 @@ public static class PageEndpoints
             .ToString();
     }
 
-    internal static string Sitemap(string baseUrl, DateTimeOffset? builtAt)
+    internal static string Sitemap(string baseUrl, DateTimeOffset? builtAt, UiOptions ui)
     {
         var lastModified = builtAt?.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        var urls = new[] { baseUrl + "/", baseUrl + OpenApiSetup.ReferencePath + "/" }.Select(url => new XElement(SitemapNamespace + "url",
+        var pages = new List<string>();
+        if (ui.LandingPage)
+        {
+            pages.Add(baseUrl + "/");
+        }
+
+        if (ui.ApiReference)
+        {
+            pages.Add(baseUrl + OpenApiSetup.ReferencePath + "/");
+        }
+
+        var urls = pages.Select(url => new XElement(SitemapNamespace + "url",
             new XElement(SitemapNamespace + "loc", url),
             lastModified is null ? null : new XElement(SitemapNamespace + "lastmod", lastModified)));
         var document = new XDocument(new XDeclaration("1.0", "utf-8", null), new XElement(SitemapNamespace + "urlset", urls));
