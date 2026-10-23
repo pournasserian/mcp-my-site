@@ -47,6 +47,8 @@ public sealed class SearchApiOptions
 
     public int MaxLimit { get; set; } = 20;
 
+    public int MaxOffset { get; set; } = 100;
+
     public int MaxQueryLength { get; set; } = 500;
 }
 

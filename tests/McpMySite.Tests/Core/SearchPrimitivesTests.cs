@@ -73,12 +73,42 @@ public class HybridRankerTests
         var pages = TestIndex.Pages.ToDictionary(p => p.Id);
         var fused = HybridRanker.Fuse([2, 1, 0], []);
 
-        var hits = HybridRanker.ToPageHits(fused, id => chunks[id], id => pages[id], "rockets", 10);
+        var response = HybridRanker.ToPageHits(fused, id => chunks[id], id => pages[id], new SearchRequest { Query = "rockets", Limit = 10 });
 
-        Assert.Equal(2, hits.Count);
-        Assert.Equal("https://example.test/docs/rockets", hits[0].Url);
-        Assert.Equal(["Fuel"], hits[0].HeadingPath);
-        Assert.Contains("<mark>Rockets</mark>", hits[0].HighlightedSnippet);
+        Assert.Equal(2, response.Hits.Count);
+        Assert.Equal("https://example.test/docs/rockets", response.Hits[0].Url);
+        Assert.Equal(["Fuel"], response.Hits[0].HeadingPath);
+        Assert.Contains("<mark>Rockets</mark>", response.Hits[0].HighlightedSnippet);
+        Assert.Equal(2, response.Total);
+        Assert.False(response.HasMore);
+    }
+
+    [Fact]
+    public void ToPageHitsSkipsOffsetPagesAndReportsTotal()
+    {
+        var chunks = TestIndex.Chunks.ToDictionary(c => c.Id, c => new HybridRanker.ChunkCandidate(c.Id, c.PageId, c.Ordinal, c.HeadingPath, c.Text));
+        var pages = TestIndex.Pages.ToDictionary(p => p.Id);
+        var fused = HybridRanker.Fuse([2, 1, 0], []);
+
+        var firstPage = HybridRanker.ToPageHits(fused, id => chunks[id], id => pages[id], new SearchRequest { Query = "rockets", Limit = 1 });
+        var secondPage = HybridRanker.ToPageHits(fused, id => chunks[id], id => pages[id], new SearchRequest { Query = "rockets", Limit = 1, Offset = 1 });
+        var pastTheEnd = HybridRanker.ToPageHits(fused, id => chunks[id], id => pages[id], new SearchRequest { Query = "rockets", Limit = 1, Offset = 5 });
+
+        Assert.Equal("https://example.test/docs/rockets", Assert.Single(firstPage.Hits).Url);
+        Assert.True(firstPage.HasMore);
+        Assert.Equal("https://example.test/", Assert.Single(secondPage.Hits).Url);
+        Assert.False(secondPage.HasMore);
+        Assert.Empty(pastTheEnd.Hits);
+        Assert.False(pastTheEnd.HasMore);
+        Assert.All(new[] { firstPage, secondPage, pastTheEnd }, r => Assert.Equal(2, r.Total));
+    }
+
+    [Fact]
+    public void CandidateCountGrowsWithTheRequestedPage()
+    {
+        Assert.Equal(50, new SearchRequest { Query = "x", Limit = 10 }.CandidateCount);
+        Assert.Equal(100, new SearchRequest { Query = "x", Limit = 20 }.CandidateCount);
+        Assert.Equal(100, new SearchRequest { Query = "x", Limit = 10, Offset = 10 }.CandidateCount);
     }
 }
 

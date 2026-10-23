@@ -304,9 +304,9 @@ public class ServerTelemetryUnitTests
         var logs = new CapturedLogs();
         using var search = Search(await LoadedHolderAsync(), logs);
 
-        await search.SearchAsync("rockets", 5, "api", CancellationToken.None);
-        await search.SearchAsync("widgets", 5, "api", CancellationToken.None);
-        await search.SearchAsync("gears", 5, "mcp", CancellationToken.None);
+        await search.SearchAsync("rockets", 5, 0, "api", CancellationToken.None);
+        await search.SearchAsync("widgets", 5, 0, "api", CancellationToken.None);
+        await search.SearchAsync("gears", 5, 0, "mcp", CancellationToken.None);
 
         Assert.Single(logs.Entries, e => e.Level == LogLevel.Warning);
         Assert.Equal(2, logs.Entries.Count(e => e.Level == LogLevel.Debug && e.Message.StartsWith("Embedding failed again", StringComparison.Ordinal)));
@@ -321,7 +321,7 @@ public class ServerTelemetryUnitTests
         var logs = new CapturedLogs();
         using var search = Search(await LoadedHolderAsync(), logs, logQueryText);
 
-        await search.SearchAsync("kerosene", 5, "api", CancellationToken.None);
+        await search.SearchAsync("kerosene", 5, 0, "api", CancellationToken.None);
         await search.FetchAsync("https://example.test/guessed-page", "mcp", CancellationToken.None);
 
         Assert.Equal(logQueryText, logs.Entries.Any(e => e.Message.Contains("kerosene", StringComparison.Ordinal)));
@@ -334,7 +334,7 @@ public class ServerTelemetryUnitTests
         var logs = new CapturedLogs();
         using var search = Search(new IndexHolder(), logs);
 
-        await Assert.ThrowsAsync<IndexUnavailableException>(() => search.SearchAsync("rockets", 5, "api", CancellationToken.None));
+        await Assert.ThrowsAsync<IndexUnavailableException>(() => search.SearchAsync("rockets", 5, 0, "api", CancellationToken.None));
 
         Assert.Contains(logs.Entries, e => e.Level == LogLevel.Warning && e.Message.StartsWith("Search (api) refused: No index is loaded", StringComparison.Ordinal));
     }

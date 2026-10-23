@@ -732,6 +732,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:AllowedOrigins` | `[]` | Browser origins allowed to call the search API, typically your site's origin. Empty allows none. |
 | `SearchApi:DefaultLimit` | `10` | Results when `limit` is not given. |
 | `SearchApi:MaxLimit` | `20` | Upper bound for `limit`. |
+| `SearchApi:MaxOffset` | `100` | Upper bound for `offset`, on the search API and the MCP `search` tool. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
 | `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the MCP playground at `/playground`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
 | `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
@@ -799,6 +800,7 @@ URL, and the server picks it up within the poll interval.
 |---|---|---|
 | `query` | string, required | Natural language or keywords |
 | `limit` | integer, optional | Pages to return, clamped to 1–20, default 10 |
+| `offset` | integer, optional | Pages to skip before the first result, default 0, clamped to 0–`SearchApi:MaxOffset` |
 
 Returns structured content:
 
@@ -806,6 +808,8 @@ Returns structured content:
 {
   "query": "contact email",
   "keywordOnly": false,
+  "total": 1,
+  "hasMore": false,
   "results": [
     { "id": "https://example.com/contact",
       "title": "Contact", "url": "https://example.com/contact",
@@ -817,7 +821,11 @@ Returns structured content:
 
 `keywordOnly` is `true` when the result came from keyword search alone: the index is keyword-only
 (section 5.5) or the query could not be embedded. Scores are reciprocal-rank-fusion scores, useful for ordering, not as probabilities. `id` is
-what to pass to `fetch`; today it is the page URL.
+what to pass to `fetch`; today it is the page URL. `total` is the number of distinct pages that matched
+and `hasMore` is `true` while a larger `offset` would return further results; the tool description
+tells the model to call again with `offset` set to the previous offset plus `limit`. Every page of
+one query is cut from the same ranking, so hits 11 to 20 with `offset: 10` are the hits 11 to 20 that
+`limit: 20` would return.
 
 **Tool `fetch`**
 
@@ -837,7 +845,7 @@ as a JSON text block for clients that ignore structured content.
 ### 7.5 The search API
 
 ```
-GET /api/search?q=<text>&limit=<n>
+GET /api/search?q=<text>&limit=<n>&offset=<n>
 ```
 
 | Status | When |
@@ -851,6 +859,8 @@ GET /api/search?q=<text>&limit=<n>
 {
   "query": "contact email",
   "keywordOnly": false,
+  "total": 1,
+  "hasMore": false,
   "results": [
     {
       "title": "Contact",
@@ -869,6 +879,11 @@ GET /api/search?q=<text>&limit=<n>
 inserted into the page as HTML. `title` and `description` are plain text and must be escaped by the
 caller. Search runs on submit only; there is no search-as-you-type endpoint, and the per-IP rate limit
 is sized for that.
+
+`offset` skips that many results, so `limit=10&offset=10` returns hits 11 to 20 of the same ranking
+that `limit=20` returns. `total` counts the distinct pages that matched and `hasMore` says whether a
+larger `offset` would return more; an offset past the last hit returns an empty `results` with
+`hasMore: false`. Out-of-range values of `limit` and `offset` are clamped, not rejected.
 
 The API is described by an OpenAPI 3.1 document at `/openapi/v1.json`, titled after the loaded site.
 Point a client generator or an API tool at it. `/docs` renders the same document as an interactive
@@ -1060,7 +1075,7 @@ Besides incoming requests, outgoing HTTP calls and .NET runtime metrics, the ser
 
 | Signal | Name | Tags |
 |---|---|---|
-| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`) |
+| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.offset`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`) |
 | Span | `mcpmysite.fetch` | `mcpmysite.channel`, `mcpmysite.found`, `mcpmysite.url` (pages found; misses only with `Telemetry:LogQueryText`) |
 | Span | `mcpmysite.index.load` | `mcpmysite.index.source` (`path` or `url`), `mcpmysite.index.outcome` |
 | Counter | `mcpmysite.search.requests` | `channel` (`mcp` or `api`), `fallback` (`true` when keyword-only) |
@@ -1248,7 +1263,8 @@ curl -s https://example.com/mcp \
 ```
 
 Style `mark` to match your site. Because requests are rate limited per visitor IP, do not fire a
-request on every keystroke.
+request on every keystroke. For a "load more" button, request the same `q` again with
+`offset` set to the number of results shown so far while the response says `hasMore: true`.
 
 ## 10. Deployment
 

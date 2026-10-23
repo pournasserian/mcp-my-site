@@ -11,6 +11,7 @@ public static class SearchEndpoints
         var endpoint = app.MapGet(options.Path, async (
             [FromQuery(Name = "q"), Description("What to look for. Natural language or keywords.")] string? query,
             [FromQuery, Description("Maximum number of results. Defaults to SearchApi:DefaultLimit and is capped at SearchApi:MaxLimit.")] int? limit,
+            [FromQuery, Description("Results to skip before the first one returned, for paging. Defaults to 0 and is capped at SearchApi:MaxOffset.")] int? offset,
             SiteSearchService search,
             IOptions<SearchApiOptions> apiOptions,
             CancellationToken cancellationToken) =>
@@ -27,12 +28,15 @@ public static class SearchEndpoints
             }
 
             var effectiveLimit = Math.Clamp(limit ?? settings.DefaultLimit, 1, settings.MaxLimit);
+            var effectiveOffset = Math.Clamp(offset ?? 0, 0, settings.MaxOffset);
             try
             {
-                var response = await search.SearchAsync(query.Trim(), effectiveLimit, "api", cancellationToken);
+                var response = await search.SearchAsync(query.Trim(), effectiveLimit, effectiveOffset, "api", cancellationToken);
                 return Results.Ok(new SearchApiResponse(
                     query,
                     response.KeywordOnly,
+                    response.Total,
+                    response.HasMore,
                     response.Hits.Select(h => new SearchApiResult(h.Title, h.Url, h.Description, h.Snippet, h.HighlightedSnippet, h.HeadingPath, h.Score)).ToList()));
             }
             catch (IndexUnavailableException ex)
@@ -44,7 +48,8 @@ public static class SearchEndpoints
         .WithTags("Search")
         .WithSummary("Search the site")
         .WithDescription("Returns the pages that best match the query, ranked by hybrid keyword and semantic search, each with a plain and a highlighted snippet. "
-            + "When the index holds no embeddings, or the query cannot be embedded, the results come from keyword search alone and keywordOnly is true.")
+            + "When the index holds no embeddings, or the query cannot be embedded, the results come from keyword search alone and keywordOnly is true. "
+            + "Page through a ranking with offset: total counts the distinct pages that matched, and hasMore is true while a larger offset would return further results.")
         .Produces<SearchApiResponse>()
         .Produces<ApiError>(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status429TooManyRequests)
@@ -70,7 +75,9 @@ public static class SearchEndpoints
 /// <summary>Body of every error the HTTP API returns.</summary>
 public sealed record ApiError(string Error);
 
-public sealed record SearchApiResponse(string Query, bool KeywordOnly, IReadOnlyList<SearchApiResult> Results);
+/// <param name="Total">Distinct pages that matched, counting those before and after this page of results.</param>
+/// <param name="HasMore">True while a larger offset would return further results.</param>
+public sealed record SearchApiResponse(string Query, bool KeywordOnly, int Total, bool HasMore, IReadOnlyList<SearchApiResult> Results);
 
 public sealed record SearchApiResult(
     string Title,

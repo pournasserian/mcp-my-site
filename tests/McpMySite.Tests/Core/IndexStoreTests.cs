@@ -20,6 +20,29 @@ public class IndexStoreTests
 
     [Theory]
     [MemberData(nameof(StoreTypes))]
+    public async Task OffsetReturnsTheNextSliceOfTheSameRanking(string storeType)
+    {
+        var directory = await TestIndex.WriteAsync(storeType);
+        using var store = await IndexStoreOpener.OpenAsync(directory);
+
+        var all = await store.SearchAsync(new SearchRequest { Query = "rockets", Limit = 5 });
+        var firstPage = await store.SearchAsync(new SearchRequest { Query = "rockets", Limit = 1 });
+        var secondPage = await store.SearchAsync(new SearchRequest { Query = "rockets", Limit = 1, Offset = 1 });
+        var pastTheEnd = await store.SearchAsync(new SearchRequest { Query = "rockets", Limit = 1, Offset = 5 });
+
+        Assert.Equal(2, all.Hits.Count);
+        Assert.False(all.HasMore);
+        Assert.Equal(all.Hits[0].Url, Assert.Single(firstPage.Hits).Url);
+        Assert.True(firstPage.HasMore);
+        Assert.Equal(all.Hits[1].Url, Assert.Single(secondPage.Hits).Url);
+        Assert.False(secondPage.HasMore);
+        Assert.Empty(pastTheEnd.Hits);
+        Assert.False(pastTheEnd.HasMore);
+        Assert.All(new[] { all, firstPage, secondPage, pastTheEnd }, r => Assert.Equal(2, r.Total));
+    }
+
+    [Theory]
+    [MemberData(nameof(StoreTypes))]
     public async Task HybridSearchCombinesKeywordAndVectorRankings(string storeType)
     {
         var directory = await TestIndex.WriteAsync(storeType);

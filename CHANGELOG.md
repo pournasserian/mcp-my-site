@@ -6,6 +6,12 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The search API and the MCP `search` tool page through results: `offset` skips that many pages
+  of the same ranking, capped by the new `SearchApi:MaxOffset` setting (default 100), and every
+  response carries `total` and `hasMore` (#62).
+
 ### Changed
 
 - The user guide gives the current reason for the 2,000-character cap on server instructions:

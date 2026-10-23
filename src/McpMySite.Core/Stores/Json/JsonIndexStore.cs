@@ -86,14 +86,11 @@ public sealed class JsonIndexStore : IIndexStore
         }
 
         var fused = HybridRanker.Fuse(keyword, vector);
-        var hits = HybridRanker.ToPageHits(
+        return Task.FromResult(HybridRanker.ToPageHits(
             fused,
             id => { var c = _chunks[_chunkRowById[id]]; return new HybridRanker.ChunkCandidate(c.Id, c.PageId, c.Ordinal, c.HeadingPath, c.Text); },
             id => _pagesById[id],
-            request.Query,
-            request.Limit);
-
-        return Task.FromResult(new SearchResponse { Hits = hits, KeywordOnly = request.QueryVector is null });
+            request));
     }
 
     public Task<PageDocument?> GetPageAsync(string url, CancellationToken cancellationToken = default)
