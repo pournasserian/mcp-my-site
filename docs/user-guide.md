@@ -743,6 +743,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `Cloudflare:TrustConnectingIp` | `true` | Behind Cloudflare, take the client IP from `CF-Connecting-IP` and tag requests with `CF-Ray` and `CF-IPCountry`. Only believed when the connection comes from `Cloudflare:TrustedNetworks`, so it is inert anywhere else. Section 7.6. |
 | `Cloudflare:TrustedNetworks` | Cloudflare's published ranges | CIDR ranges of the Cloudflare edge, IPv4 and IPv6, from <https://www.cloudflare.com/ips>. Shipped in `appsettings.json`; replace the list when Cloudflare publishes new ranges. |
 | `Telemetry:Exporter` | `Auto` | Where traces, metrics and logs are exported on top of the console log: `Auto` (Application Insights when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, otherwise OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, otherwise nowhere), `None`, `AzureMonitor` or `Otlp`. Section 7.10. |
+| `Telemetry:Metrics` | `All` | The metric groups to export, as a comma-separated list of `Server` (the server's own instruments, the MCP SDK's and the embedding calls), `AspNetCore`, `HttpClient` and `Runtime`, for example `Server, AspNetCore`. The others are dropped before export. Section 7.10. |
 | `Telemetry:LogQueryText` | `false` | Include query text, request query strings, and fetch targets that match no page in logs and trace tags. Off by default because queries can carry personal data. |
 | `Telemetry:LogBodies` | `false` | Log the request and response bodies of `/mcp` and `/api/search`, capped at 8 KB, with an allowlist of headers and credentials masked. Includes what people search for. Section 7.10. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | | Application Insights connection string, for the optional Azure Monitor exporter. |
@@ -1087,6 +1088,15 @@ Besides incoming requests, outgoing HTTP calls and .NET runtime metrics, the ser
 | Counter | `mcpmysite.requests.rejected` | `reason`: `api_key` or `rate_limit` |
 | Gauge | `mcpmysite.index.age` (s) | Time since the loaded index was built. Alert on it to catch a rebuild that stopped running. |
 | Gauge | `mcpmysite.index.pages` | Pages in the loaded index. |
+
+**Choosing what is exported.** The ASP.NET Core, HTTP client and runtime instruments are most of the
+metric volume: one row per tag set every minute, and `http.client.open_connections`,
+`http.client.active_requests` and the per-generation GC series alone can be nine tenths of what a
+workspace ingests. `Telemetry:Metrics` names the groups to keep, for example `Server, AspNetCore`
+(as an environment variable, `Telemetry__Metrics=Server,AspNetCore`). The rest are dropped before
+export, including the HTTP meters the Application Insights distro enables on its own. Metrics are
+exported once a minute. With `Otlp`, the standard `OTEL_METRIC_EXPORT_INTERVAL` (milliseconds)
+changes that; the Application Insights exporter fixes its interval and offers no setting for it.
 
 Behind Cloudflare, each request span also carries `cloudflare.ray_id` (from `CF-Ray`),
 `cloudflare.country` (from `CF-IPCountry`) and `client.address` (the visitor, section 7.6). They are

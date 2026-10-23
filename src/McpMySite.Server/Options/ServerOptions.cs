@@ -91,6 +91,12 @@ public sealed class TelemetryOptions
     public TelemetryExporter Exporter { get; set; } = TelemetryExporter.Auto;
 
     /// <summary>
+    /// The metric groups to export, as a comma-separated list of <see cref="MetricGroups"/> names. Instruments of
+    /// the other groups are dropped before export, whichever instrumentation or exporter registered them.
+    /// </summary>
+    public MetricGroups Metrics { get; set; } = MetricGroups.All;
+
+    /// <summary>
     /// Include the query text, and fetch targets that match no page, in logs and traces. Off by default because
     /// queries can contain personal data.
     /// </summary>

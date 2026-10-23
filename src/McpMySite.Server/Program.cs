@@ -221,7 +221,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
     var telemetryOptions = app.Services.GetRequiredService<IOptions<TelemetryOptions>>().Value;
     var cloudflareOptions = app.Services.GetRequiredService<IOptions<CloudflareOptions>>().Value;
     startupLogger.LogInformation(
-        "mcp-my-site {Version} ({Environment}): MCP at {McpPath} (API key {ApiKey}), search API {SearchApi}, pages {Pages}, embeddings at {EmbeddingEndpoint}, telemetry export {Exporter}, query text logging {LogQueryText}, body logging {LogBodies}, Cloudflare client IP {CloudflareClientIp}",
+        "mcp-my-site {Version} ({Environment}): MCP at {McpPath} (API key {ApiKey}), search API {SearchApi}, pages {Pages}, embeddings at {EmbeddingEndpoint}, telemetry export {Exporter}, metrics {Metrics}, query text logging {LogQueryText}, body logging {LogBodies}, Cloudflare client IP {CloudflareClientIp}",
         typeof(Program).Assembly.GetName().Version?.ToString(3),
         app.Environment.EnvironmentName,
         mcpOptions.Path,
@@ -230,6 +230,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
         uiOptions.Enabled ? "on" : "off",
         embeddingOptions.Enabled ? embeddingOptions.Endpoint : "off",
         telemetryExporter,
+        telemetryOptions.Metrics,
         telemetryOptions.LogQueryText ? "on" : "off",
         telemetryOptions.LogBodies ? "on" : "off",
         cloudflareOptions.TrustConnectingIp && cloudflareOptions.TrustedNetworks.Length > 0 ? "on" : "off");

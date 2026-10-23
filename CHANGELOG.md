@@ -11,6 +11,9 @@ All notable changes to this project are recorded here. The format follows
 - The search API and the MCP `search` tool page through results: `offset` skips that many pages
   of the same ranking, capped by the new `SearchApi:MaxOffset` setting (default 100), and every
   response carries `total` and `hasMore` (#62).
+- `Telemetry:Metrics` names the metric groups the server exports (`Server`, `AspNetCore`,
+  `HttpClient`, `Runtime`; default all), so a deployment can drop the HTTP client and runtime series
+  that make up most of what a workspace ingests. The startup line names the groups in use (#46).
 
 ### Changed
 
