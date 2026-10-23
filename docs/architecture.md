@@ -223,6 +223,7 @@ flowchart LR
     subgraph Builder["IndexBuilder"]
         direction LR
         Src["ISiteSource<br/>CrawlSource | FolderSource"] --> Ext["HtmlExtractor<br/>pick content, clean,<br/>Markdown + metadata"]
+        Src -->|replayed page| Chk
         Ext --> Chk["MarkdownChunker<br/>heading-aware pieces"]
         Chk --> Safe{"Safety checks<br/>min pages, drop %, error %"}
         Safe -->|pass| Emb["BatchEmbedder<br/>cache lookup, batches, retries"]
@@ -235,7 +236,8 @@ flowchart LR
 
 The builder is deliberately linear: read every page, extract and chunk as they arrive, check the
 totals, then embed and write. Embedding happens after the safety checks so a broken crawl never
-spends money.
+spends money. A page the crawler replays from the page store (below) arrives already extracted and
+skips `HtmlExtractor`; chunking still runs so chunk and page ids stay sequential for the build.
 
 ### 4.2 Build sequence
 
@@ -245,6 +247,7 @@ sequenceDiagram
     participant CLI as mcpmysite build
     participant B as IndexBuilder
     participant S as CrawlSource
+    participant PS as PageStore (SQLite)
     participant X as HtmlExtractor + Chunker
     participant E as BatchEmbedder
     participant C as EmbeddingCache (SQLite)
@@ -256,9 +259,16 @@ sequenceDiagram
     B->>B: read previous manifest from output folder (for the drop check)
     B->>S: GetPagesAsync()
     S->>S: robots.txt, sitemap(s), link following if needed
-    loop each fetched page
-        S-->>B: RawPage(url, html, lastModified hint)
-        B->>X: Extract + Chunk
+    loop each page
+        S->>PS: stored entry for url?
+        alt sitemap lastmod unchanged, or 304 to If-None-Match / If-Modified-Since
+            S-->>B: RawPage(replayed extraction, stored links)
+            B->>X: Chunk
+        else fetched
+            S-->>B: RawPage(url, html, validators)
+            B->>X: Extract + Chunk
+            B->>PS: store extraction, validators, lastmod, links
+        end
         X-->>B: PageDocument + chunk texts
     end
     B->>B: safety checks
@@ -284,6 +294,12 @@ sequenceDiagram
 - A coordinator keeps up to `Concurrency` fetches in flight. Each fetch validates the response
   (HTML only, size cap, `X-Robots-Tag`), optionally extracts links into the queue, and pushes the page
   into a channel the builder reads from.
+- Before a fetch, the `PageStore` (a SQLite table next to the embedding cache, keyed by site and
+  normalised URL) is consulted. An unchanged sitemap `lastmod` skips the request; otherwise the stored
+  `ETag` and `Last-Modified` go out as `If-None-Match` and `If-Modified-Since`, and a `304` replays
+  the stored extraction and links. Entries older than `FullRefreshDays` are ignored so a change the
+  server does not signal is still picked up. The builder writes the entry after extraction, dropped
+  pages included.
 - Robots rules are checked when a URL is dequeued; include/exclude globs and the same-host rule are
   applied when a URL is normalised, before it ever enters the queue.
 - The crawl stops when the queue is empty and nothing is in flight, or when `MaxPages` is reached.
@@ -615,7 +631,7 @@ src/
   McpMySite.Indexer/
     Program.cs                     CLI (build, init, search)
     Configuration/                 IndexerConfig, IndexerConfigLoader, GlobMatcher
-    Sources/                       ISiteSource, CrawlSource, FolderSource, RobotsTxt, SitemapReader
+    Sources/                       ISiteSource, CrawlSource, FolderSource, RobotsTxt, SitemapReader, PageStore
     Extraction/                    HtmlExtractor, ExtractedPage
     Chunking/                      MarkdownChunker
     Embeddings/                    EmbeddingCache, BatchEmbedder

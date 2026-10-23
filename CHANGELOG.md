@@ -8,6 +8,12 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- The indexer skips pages that have not changed since the previous build. A page store next to the
+  embedding cache keeps each page's `ETag`, `Last-Modified`, sitemap `lastmod`, extraction and links;
+  an unchanged `lastmod` skips the request, and otherwise the crawler sends `If-None-Match` /
+  `If-Modified-Since` and replays the stored page on `304`. `Crawl:SkipUnchanged` turns it off for a
+  run and `Crawl:FullRefreshDays` (default 7) forces a periodic full download; `report.json` gains
+  `pagesNotModified` and `pagesSkippedByLastmod` (#51).
 - `GET {Mcp:Path}/server-card` serves the MCP server card of SEP-2127 as
   `application/mcp-server-card+json`: the registry name, version and repository, the site's name,
   and one `remotes` entry with the public MCP URL, the supported protocol versions and the

@@ -20,7 +20,14 @@ public sealed class BuildReport
 
     public bool KeywordOnly { get; set; }
 
+    /// <summary>Pages delivered by the source, downloaded or replayed from the page store.</summary>
     public int PagesFetched { get; set; }
+
+    /// <summary>Pages the server answered 304 for; replayed from the page store.</summary>
+    public int PagesNotModified { get; set; }
+
+    /// <summary>Pages not requested because the sitemap lastmod was unchanged; replayed from the page store.</summary>
+    public int PagesSkippedByLastmod { get; set; }
 
     public int PagesIndexed { get; set; }
 

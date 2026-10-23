@@ -25,16 +25,18 @@ public sealed partial class CrawlSource : ISiteSource
     private readonly Uri _siteUrl;
     private readonly GlobMatcher _filter;
     private readonly ILogger _logger;
+    private readonly PageStore? _store;
     private readonly List<SourceError> _errors = [];
     private readonly object _lock = new();
 
-    public CrawlSource(HttpClient http, CrawlConfig config, Uri siteUrl, GlobMatcher filter, ILogger logger)
+    public CrawlSource(HttpClient http, CrawlConfig config, Uri siteUrl, GlobMatcher filter, ILogger logger, PageStore? store = null)
     {
         _http = http;
         _config = config;
         _siteUrl = siteUrl;
         _filter = filter;
         _logger = logger;
+        _store = store;
     }
 
     public IReadOnlyList<SourceError> Errors
@@ -50,6 +52,12 @@ public sealed partial class CrawlSource : ISiteSource
 
     /// <summary>Number of URLs that were skipped because robots.txt or a noindex directive asked for it.</summary>
     public int DisallowedCount { get; private set; }
+
+    /// <summary>Pages the server answered 304 for, replayed from the page store.</summary>
+    public int NotModifiedCount { get; private set; }
+
+    /// <summary>Pages not requested because the sitemap lastmod equals the stored one, replayed from the page store.</summary>
+    public int SkippedByLastmodCount { get; private set; }
 
     public async IAsyncEnumerable<RawPage> GetPagesAsync([EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -166,7 +174,23 @@ public sealed partial class CrawlSource : ISiteSource
                     await Task.Delay(_config.DelayMilliseconds, cancellationToken);
                 }
 
-                var page = await TryFetchPageAsync(url, lastModified, cancellationToken);
+                var stored = Lookup(url);
+                RawPage? page;
+                if (stored is not null && lastModified is not null && stored.SitemapLastmod == lastModified)
+                {
+                    lock (_lock)
+                    {
+                        SkippedByLastmodCount++;
+                    }
+
+                    _logger.LogDebug("Replaying {Url}: sitemap lastmod {Lastmod} is unchanged", url, lastModified);
+                    page = Replay(stored, lastModified);
+                }
+                else
+                {
+                    page = await TryFetchPageAsync(url, lastModified, stored, cancellationToken);
+                }
+
                 if (page is null)
                 {
                     return;
@@ -187,9 +211,16 @@ public sealed partial class CrawlSource : ISiteSource
                     return;
                 }
 
+                if (followLinks || _store is not null)
+                {
+                    // Links are kept with the stored page so a replayed page still feeds the queue next time.
+                    var links = page.Replayed is null ? ExtractLinks(page.Html, page.Url).ToList() : page.Links.Where(l => TryNormalize(l, out _)).ToList();
+                    page = page with { Links = links };
+                }
+
                 if (followLinks)
                 {
-                    foreach (var link in ExtractLinks(page.Html, page.Url))
+                    foreach (var link in page.Links)
                     {
                         lock (_lock)
                         {
@@ -212,9 +243,24 @@ public sealed partial class CrawlSource : ISiteSource
 
         await producer;
         _logger.LogInformation(
-            "Crawl finished: {Accepted} pages fetched, {Disallowed} skipped by robots.txt or X-Robots-Tag, {Errors} failed",
-            accepted, DisallowedCount, Errors.Count);
+            "Crawl finished: {Accepted} pages read ({NotModified} not modified, {Lastmod} unchanged by sitemap lastmod), {Disallowed} skipped by robots.txt or X-Robots-Tag, {Errors} failed",
+            accepted, NotModifiedCount, SkippedByLastmodCount, DisallowedCount, Errors.Count);
     }
+
+    private PageStore.Entry? Lookup(string url)
+    {
+        var entry = _store?.Get(url);
+        if (entry is not null && _config.FullRefreshDays > 0 && entry.FetchedAt < DateTimeOffset.UtcNow.AddDays(-_config.FullRefreshDays))
+        {
+            _logger.LogDebug("Fetching {Url} unconditionally: last downloaded {FetchedAt:u}, over Crawl:FullRefreshDays ({Days})", url, entry.FetchedAt, _config.FullRefreshDays);
+            return null;
+        }
+
+        return entry;
+    }
+
+    private static RawPage Replay(PageStore.Entry entry, DateTimeOffset? lastModified) =>
+        new(entry.Url, string.Empty, lastModified ?? entry.Page.Modified) { Links = entry.Links, Replayed = entry.Page };
 
     private async Task<RobotsTxt> LoadRobotsAsync(CancellationToken cancellationToken)
     {
@@ -239,13 +285,13 @@ public sealed partial class CrawlSource : ISiteSource
         }
     }
 
-    private async Task<RawPage?> TryFetchPageAsync(string url, DateTimeOffset? lastModified, CancellationToken cancellationToken)
+    private async Task<RawPage?> TryFetchPageAsync(string url, DateTimeOffset? lastModified, PageStore.Entry? stored, CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
             try
             {
-                return await FetchPageAsync(url, lastModified, cancellationToken);
+                return await FetchPageAsync(url, lastModified, stored, cancellationToken);
             }
             catch (Exception ex) when (attempt == 1 && IsTransient(ex) && !cancellationToken.IsCancellationRequested)
             {
@@ -260,11 +306,38 @@ public sealed partial class CrawlSource : ISiteSource
         }
     }
 
-    private async Task<RawPage?> FetchPageAsync(string url, DateTimeOffset? lastModified, CancellationToken cancellationToken)
+    private async Task<RawPage?> FetchPageAsync(string url, DateTimeOffset? lastModified, PageStore.Entry? stored, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Accept.ParseAdd("text/html,application/xhtml+xml;q=0.9,*/*;q=0.1");
+        if (stored?.ETag is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-None-Match", stored.ETag);
+        }
+
+        if (stored?.LastModified is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-Modified-Since", stored.LastModified);
+        }
+
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotModified && stored is not null)
+        {
+            lock (_lock)
+            {
+                NotModifiedCount++;
+            }
+
+            if (lastModified is not null && stored.SitemapLastmod != lastModified)
+            {
+                // Remember the new lastmod so the next build can skip the request altogether.
+                _store!.Put(stored with { SitemapLastmod = lastModified });
+            }
+
+            _logger.LogDebug("Replaying {Url}: 304 Not Modified", url);
+            return Replay(stored, lastModified);
+        }
 
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
         {
@@ -338,7 +411,12 @@ public sealed partial class CrawlSource : ISiteSource
         var html = encoding.GetString(limited.ToArray());
         var modified = lastModified ?? response.Content.Headers.LastModified;
         _logger.LogDebug("Fetched {Url} ({Status}, {Bytes} bytes)", normalizedFinal, (int)response.StatusCode, limited.Length);
-        return new RawPage(normalizedFinal, html, modified);
+        return new RawPage(normalizedFinal, html, modified)
+        {
+            ETag = response.Headers.ETag?.ToString(),
+            LastModified = response.Content.Headers.TryGetValues("Last-Modified", out var values) ? values.FirstOrDefault() : null,
+            SitemapLastmod = lastModified,
+        };
     }
 
     private void RecordError(string url, string message)
