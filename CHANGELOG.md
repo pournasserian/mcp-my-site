@@ -6,6 +6,12 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `Telemetry:Metrics` names the metric groups the server exports (`Server`, `AspNetCore`,
+  `HttpClient`, `Runtime`; default all), so a deployment can drop the HTTP client and runtime series
+  that make up most of what a workspace ingests. The startup line names the groups in use (#46).
+
 ### Changed
 
 - The user guide gives the current reason for the 2,000-character cap on server instructions:
