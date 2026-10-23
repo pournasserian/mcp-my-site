@@ -64,6 +64,8 @@ services.AddOptions<CorsOptions>().Configure<IOptions<SearchApiOptions>, IOption
         .WithMethods("GET", "POST", "DELETE")
         .WithHeaders("Content-Type", "Authorization", "X-Api-Key", "MCP-Protocol-Version", "Mcp-Session-Id")
         .WithExposedHeaders("Mcp-Session-Id"));
+    // The card is a public discovery document (SEP-2127): any origin may read it, with its ETag.
+    cors.AddPolicy(ServerCard.CorsPolicy, policy => policy.AllowAnyOrigin().WithMethods("GET").WithHeaders("Content-Type", "If-None-Match").WithExposedHeaders("ETag"));
 });
 
 services.AddRateLimiter(options =>
@@ -143,8 +145,9 @@ app.UseWhen(context => IsBrowserOnMcpEndpoint(context, mcpOptions.Path) && conte
     return Task.CompletedTask;
 }));
 
-// Optional API key on the MCP endpoint only; the search API is public by design.
-app.UseWhen(context => context.Request.Path.StartsWithSegments(mcpOptions.Path), branch => branch.Use(async (context, next) =>
+// Optional API key on the MCP endpoint only; the search API is public by design, and so is the server card under the
+// MCP path, which exists to tell a client that the key is needed.
+app.UseWhen(context => context.Request.Path.StartsWithSegments(mcpOptions.Path, out var remaining) && remaining != ServerCard.PathSuffix, branch => branch.Use(async (context, next) =>
 {
     var expected = context.RequestServices.GetRequiredService<IOptions<McpOptions>>().Value.ApiKey;
     if (string.IsNullOrWhiteSpace(expected))
@@ -175,6 +178,7 @@ app.UseWhen(context => context.Request.Path.StartsWithSegments(mcpOptions.Path),
 app.MapMcp(mcpOptions.Path)
     .RequireRateLimiting(SearchEndpoints.RateLimitPolicy)
     .RequireCors(McpCorsPolicy);
+app.MapServerCard(mcpOptions);
 
 if (searchApiOptions.Enabled)
 {

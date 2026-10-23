@@ -784,6 +784,16 @@ URL, and the server picks it up within the poll interval.
 - A person who opens the endpoint's URL in a browser is redirected to the landing page: any `GET` or
   `HEAD` on `Mcp:Path` without `text/event-stream` in `Accept` goes to `/` while `Ui:Enabled` is on.
   With the pages off, the transport answers `405` as the specification says.
+- Discovery: `GET {Mcp:Path}/server-card` answers with the server card of
+  [SEP-2127](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/seps/2127-mcp-server-cards.md)
+  as `application/mcp-server-card+json`: the server's registry name, version, repository, the
+  site's name in `title`, and one `remotes` entry with the public URL of `Mcp:Path` (from
+  `Ui:PublicUrl`, else the request), the protocol versions the server speaks and, when `Mcp:ApiKey`
+  is set, the `Authorization` header a client has to send. The key itself is never in the card, and
+  the card needs no key. It carries no tools or capabilities, which `tools/list` and `initialize`
+  answer for the running server. It is served with `Cache-Control: public, max-age=3600`, an
+  `ETag` (`If-None-Match` gets `304`), CORS for every origin, and the shared rate limit. The early
+  draft address `/.well-known/mcp/server-card.json` is not served.
 - Capabilities: tools only. No resources, no prompts. The `initialize` answer also lists `logging`:
   the MCP SDK answers `logging/setLevel` itself and lists the capability on every server, with no way
   to turn it off; this server never sends `notifications/message`. The `2026-07-28` revision retires
@@ -1728,6 +1738,7 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 | Method and path | Purpose | Rate limited | Key |
 |---|---|---|---|
 | `POST {Mcp:Path}` | MCP JSON-RPC (default `/mcp`) | yes | optional |
+| `GET {Mcp:Path}/server-card` | Server card (SEP-2127): name, version, repository and the remote endpoint, as `application/mcp-server-card+json` | yes | no |
 | `GET {SearchApi:Path}?q=&limit=` | Search API (default `/api/search`) | yes | no |
 | `GET /api/info` | Site, index, build statistics and endpoint URLs as JSON | no | no |
 | `GET /openapi/v1.json` | OpenAPI document for the search API and `/api/info` | no | no |

@@ -8,6 +8,11 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- `GET {Mcp:Path}/server-card` serves the MCP server card of SEP-2127 as
+  `application/mcp-server-card+json`: the registry name, version and repository, the site's name,
+  and one `remotes` entry with the public MCP URL, the supported protocol versions and the
+  `Authorization` header when `Mcp:ApiKey` is set. Cached for an hour with an `ETag`, open to every
+  origin, rate limited, and reachable without the key (#53).
 - The search API and the MCP `search` tool page through results: `offset` skips that many pages
   of the same ranking, capped by the new `SearchApi:MaxOffset` setting (default 100), and every
   response carries `total` and `hasMore` (#62).

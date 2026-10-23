@@ -79,6 +79,9 @@ Cursor, Claude Desktop) are in the [user guide](docs/user-guide.md#4-quick-start
 - **ChatGPT and Claude ready.** Streamable HTTP MCP endpoint with `search` and `fetch` tools in the
   shape ChatGPT connectors use, and server instructions generated from the site itself. Works with
   Claude Code, Claude Desktop, VS Code, Cursor and the MCP Inspector.
+- **Discoverable.** `/mcp/server-card` serves the MCP server card (SEP-2127) with the endpoint, the
+  protocol versions and whether a key is needed, and `/llms.txt` lists the indexed pages for
+  language models.
 - **Search API for your own site.** `GET /api/search` with CORS, rate limiting, offset paging, an
   OpenAPI 3.1 document and an interactive reference. Drop-in snippet for a search box in the
   [user guide](docs/user-guide.md#9-adding-a-search-box-to-your-site).
