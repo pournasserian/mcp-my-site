@@ -27,7 +27,8 @@ public static class TelemetrySetup
                 .AddMeter(ServerDiagnostics.Name, ServerDiagnostics.McpSdkName, EmbeddingGeneratorFactory.TelemetrySourceName)
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
-                .AddRuntimeInstrumentation());
+                .AddRuntimeInstrumentation()
+                .DropMetricGroupsNotIn(options.Metrics));
 
         switch (exporter)
         {
@@ -47,6 +48,36 @@ public static class TelemetrySetup
         // Exported log records carry the rendered message, so a collector shows the same text as the console.
         builder.Services.Configure<OpenTelemetryLoggerOptions>(o => o.IncludeFormattedMessage = true);
         return exporter;
+    }
+
+    private static readonly (MetricGroups Group, string[] Instruments)[] GroupInstruments =
+    [
+        (MetricGroups.Server, ["mcpmysite.*", "mcp.*", "gen_ai.*"]),
+        (MetricGroups.AspNetCore, ["http.server.*", "kestrel.*", "signalr.*", "aspnetcore.*"]),
+        (MetricGroups.HttpClient, ["http.client.*", "dns.*"]),
+        (MetricGroups.Runtime, ["dotnet.*", "process.runtime.dotnet.*"]),
+    ];
+
+    /// <summary>
+    /// Drops the instruments of every group not in <paramref name="enabled"/>. Done with views rather than by leaving
+    /// the instrumentation out, because the Azure Monitor distro enables the HTTP server and client meters on its own.
+    /// </summary>
+    private static MeterProviderBuilder DropMetricGroupsNotIn(this MeterProviderBuilder metrics, MetricGroups enabled)
+    {
+        foreach (var (group, instruments) in GroupInstruments)
+        {
+            if (enabled.HasFlag(group))
+            {
+                continue;
+            }
+
+            foreach (var instrument in instruments)
+            {
+                metrics.AddView(instrument, MetricStreamConfiguration.Drop);
+            }
+        }
+
+        return metrics;
     }
 
     /// <summary>
