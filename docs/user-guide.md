@@ -669,8 +669,9 @@ in its `initialize` answer. They tell the model what the site is, when to use th
   titles, newest first.
 
 The text is built from the crawled pages by a fixed template, so the same site gives the same text
-whatever order the crawl found the pages in. It is kept to 2,000 characters: Claude Code is reported
-to cut server instructions at 2,048, and several servers share the model's attention anyway. When a
+whatever order the crawl found the pages in. It is kept to 2,000 characters: Claude Code cuts server
+instructions at 4,096 characters, and at 2,048 before v2.1.296, so the cap keeps the text whole in
+current and older versions alike, and several servers share the model's attention anyway. When a
 site has more to say, the outline gives way first, dropping page titles and then whole sections (the
 last line then says how many were left out); everything above the outline always stays.
 
