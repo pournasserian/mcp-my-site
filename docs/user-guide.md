@@ -746,6 +746,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `Telemetry:Metrics` | `All` | The metric groups to export, as a comma-separated list of `Server` (the server's own instruments, the MCP SDK's and the embedding calls), `AspNetCore`, `HttpClient` and `Runtime`, for example `Server, AspNetCore`. The others are dropped before export. Section 7.10. |
 | `Telemetry:LogQueryText` | `false` | Include query text, request query strings, and fetch targets that match no page in logs and trace tags. Off by default because queries can carry personal data. |
 | `Telemetry:LogBodies` | `false` | Log the request and response bodies of `/mcp` and `/api/search`, capped at 8 KB, with an allowlist of headers and credentials masked. Includes what people search for. Section 7.10. |
+| `Telemetry:VisitorId` | `false` | Tag every request, search and fetch with `mcpmysite.visitor`, a hash of the client address and user agent with a salt that changes daily and is never stored, to count distinct visitors without keeping addresses. Section 7.10. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | | Application Insights connection string, for the optional Azure Monitor exporter. |
 | `AzureMonitor:*` | | Application Insights exporter options, such as `SamplingRatio`, `TracesPerSecond` and `EnableLiveMetrics` (section 7.10). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | | OTLP collector address. The other standard `OTEL_*` settings (protocol, headers, service name) apply too. |
@@ -1086,8 +1087,8 @@ Besides incoming requests, outgoing HTTP calls and .NET runtime metrics, the ser
 
 | Signal | Name | Tags |
 |---|---|---|
-| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.offset`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`), and the MCP client tags below |
-| Span | `mcpmysite.fetch` | `mcpmysite.channel`, `mcpmysite.found`, `mcpmysite.url` (pages found; misses only with `Telemetry:LogQueryText`), and the MCP client tags below |
+| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.offset`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`), `mcpmysite.visitor` (only with `Telemetry:VisitorId`), and the MCP client tags below |
+| Span | `mcpmysite.fetch` | `mcpmysite.channel`, `mcpmysite.found`, `mcpmysite.url` (pages found; misses only with `Telemetry:LogQueryText`), `mcpmysite.visitor` (only with `Telemetry:VisitorId`), and the MCP client tags below |
 | Span | `mcpmysite.index.load` | `mcpmysite.index.source` (`path` or `url`), `mcpmysite.index.outcome` |
 | Counter | `mcpmysite.search.requests` | `channel` (`mcp` or `api`), `fallback` (`true` when keyword-only), and the MCP client tags below |
 | Histogram | `mcpmysite.search.duration` (ms) | same |
@@ -1117,6 +1118,16 @@ join key to the Cloudflare dashboards. `client.address` is consumed by the expor
 `client_IP`, and Application Insights masks that field to `0.0.0.0` by default, so the visitor's
 address is not readable there. Use the Ray ID, or turn on `Telemetry:LogBodies` briefly, which logs
 the forwarded address headers.
+
+**Counting visitors.** Nothing identifies a visitor by default: Application Insights masks the client
+address, the pages and the search API carry no session, and the MCP session id counts MCP sessions.
+`Telemetry:VisitorId` (default `false`) adds `mcpmysite.visitor` to the request span and to
+`mcpmysite.search` and `mcpmysite.fetch`: the first 16 hex characters of a SHA-256 over the client
+address (after the Cloudflare step above), the user agent and a 32-byte random salt that lives in
+memory only and is replaced at midnight UTC. The address never leaves the process, the key cannot be
+reversed, and a visitor gets a new key every day, so it supports "distinct visitors today" and
+"searches per visitor" but not tracking across days. People sharing an address and browser, such
+as an office behind one NAT, count as one.
 
 It also collects the MCP SDK's spans and metrics (one span per JSON-RPC call, such as
 `tools/call search`, with the tool name) and the embedding calls, which follow the OpenTelemetry GenAI

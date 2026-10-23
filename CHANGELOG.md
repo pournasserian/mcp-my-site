@@ -23,6 +23,10 @@ All notable changes to this project are recorded here. The format follows
   carry `mcp.client.name`, `mcp.client.version` and `mcp.protocol.version` from the client's
   `clientInfo`; on the stateless transport the client is known on `initialize` and, from the
   `2026-07-28` revision, on every request (#44).
+- `Telemetry:VisitorId` (default `false`) tags every request, search and fetch with
+  `mcpmysite.visitor`, a hash of the client address and user agent with a random salt that is
+  replaced daily and never stored, so a dashboard can count distinct visitors without the server
+  keeping addresses (#45).
 
 ### Changed
 

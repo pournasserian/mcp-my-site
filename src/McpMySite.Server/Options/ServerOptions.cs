@@ -107,6 +107,12 @@ public sealed class TelemetryOptions
     /// allowlist of headers and keys and secrets redacted. Includes the search text, so it is off by default.
     /// </summary>
     public bool LogBodies { get; set; }
+
+    /// <summary>
+    /// Tag each request, search and fetch with a visitor key: a hash of the client address and user agent with a
+    /// random salt that is replaced every day and never stored. Counts distinct visitors without keeping addresses.
+    /// </summary>
+    public bool VisitorId { get; set; }
 }
 
 public sealed class CloudflareOptions

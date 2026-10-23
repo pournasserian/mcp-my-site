@@ -28,6 +28,7 @@ public sealed class SiteSearchService : IDisposable
         using var activity = ServerDiagnostics.ActivitySource.StartActivity("mcpmysite.search");
         var client = McpClientTags.Current;
         client?.Apply(activity);
+        activity?.SetTag(VisitorKeyMiddleware.Tag, VisitorKey.Current);
         activity?.SetTag("mcpmysite.channel", channel);
         activity?.SetTag("mcpmysite.limit", limit);
         activity?.SetTag("mcpmysite.offset", offset);
@@ -97,6 +98,7 @@ public sealed class SiteSearchService : IDisposable
         using var activity = ServerDiagnostics.ActivitySource.StartActivity("mcpmysite.fetch");
         var client = McpClientTags.Current;
         client?.Apply(activity);
+        activity?.SetTag(VisitorKeyMiddleware.Tag, VisitorKey.Current);
         activity?.SetTag("mcpmysite.channel", channel);
 
         var store = RequireIndex(activity, "Fetch", channel);
