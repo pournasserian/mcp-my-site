@@ -6,6 +6,12 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `server/discover` on the `2026-07-28` revision no longer advertises the `logging` capability that
+  revision retires (MCP SDK 2.3.0). `initialize` still lists it, because the SDK answers
+  `logging/setLevel` on every server; the user guide now says so (#55).
+
 ## [0.2.2] - 2026-10-17
 
 ### Fixed

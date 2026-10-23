@@ -212,6 +212,38 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
     }
 
     [Fact]
+    public async Task McpCapabilitiesAreToolsPlusTheSdkLoggingOnInitializeOnly()
+    {
+        // The SDK always lists logging on initialize because it answers logging/setLevel itself; section 7.4 says so.
+        var init = await McpCallAsync(new
+        {
+            jsonrpc = "2.0",
+            id = 6,
+            method = "initialize",
+            @params = new { protocolVersion = "2025-11-25", capabilities = new { }, clientInfo = new { name = "test", version = "1" } },
+        });
+        Assert.Equal(["logging", "tools"], init.GetProperty("capabilities").EnumerateObject().Select(p => p.Name).Order());
+
+        // The 2026-07-28 revision retires logging, so its discovery answer must not carry it.
+        var discover = await McpCallAsync(new
+        {
+            jsonrpc = "2.0",
+            id = 7,
+            method = "server/discover",
+            @params = new
+            {
+                _meta = new Dictionary<string, object>
+                {
+                    ["io.modelcontextprotocol/protocolVersion"] = "2026-07-28",
+                    ["io.modelcontextprotocol/clientCapabilities"] = new { },
+                    ["io.modelcontextprotocol/clientInfo"] = new { name = "test", version = "1" },
+                },
+            },
+        }, protocolVersion: "2026-07-28", mcpMethod: "server/discover");
+        Assert.Equal(["tools"], discover.GetProperty("capabilities").EnumerateObject().Select(p => p.Name));
+    }
+
+    [Fact]
     public async Task OpenApiDocumentDescribesTheHttpApiOnly()
     {
         var document = await Client.GetFromJsonAsync<JsonElement>("/openapi/v1.json");
@@ -238,12 +270,22 @@ public class ServerTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         Assert.DoesNotContain("cdn.jsdelivr.net", html);
     }
 
-    private async Task<JsonElement> McpCallAsync(object request)
+    private async Task<JsonElement> McpCallAsync(object request, string? protocolVersion = null, string? mcpMethod = null)
     {
         using var message = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent.Create(request) };
         message.Headers.Accept.ParseAdd("application/json");
         message.Headers.Accept.ParseAdd("text/event-stream");
         message.Headers.Add("X-Api-Key", ServerFixture.ApiKey);
+        if (protocolVersion is not null)
+        {
+            message.Headers.Add("MCP-Protocol-Version", protocolVersion);
+        }
+
+        // The 2026-07-28 transport wants the method repeated in a header so a proxy can route without reading the body.
+        if (mcpMethod is not null)
+        {
+            message.Headers.Add("Mcp-Method", mcpMethod);
+        }
 
         var response = await Client.SendAsync(message);
         var text = await response.Content.ReadAsStringAsync();
