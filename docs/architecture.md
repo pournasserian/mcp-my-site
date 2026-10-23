@@ -332,13 +332,13 @@ low-text pages and the content-selection strategy per page; it is the diagnostic
 ```mermaid
 flowchart TB
     subgraph Pipeline["ASP.NET Core pipeline"]
-        FH["Forwarded headers"] --> CFIP["Cloudflare client IP<br/>CF-Connecting-IP, only from Cloudflare ranges"] --> BL["Body logging<br/>Telemetry:LogBodies, off by default"] --> CORS["CORS<br/>per-endpoint policies"] --> RL["Rate limiter<br/>fixed window per client IP"] --> Key["API key check<br/>MCP path only, when configured"]
+        FH["Forwarded headers"] --> CFIP["Cloudflare client IP<br/>CF-Connecting-IP, only from Cloudflare ranges"] --> BL["Body logging<br/>Telemetry:LogBodies, off by default"] --> RH["Response headers<br/>frame-ancestors, nosniff, referrer policy"] --> CORS["CORS<br/>per-endpoint policies"] --> RL["Rate limiter<br/>fixed window per client IP"] --> Key["API key check<br/>MCP path only, when configured"]
     end
     Key --> MCP["MapMcp<br/>ModelContextProtocol.AspNetCore<br/>stateless"]
     Key --> SAPI["GET /api/search<br/>minimal API"]
     FH --> H["GET /healthz, GET /"]
     FH --> Docs["GET /openapi/v1.json<br/>GET /docs (Scalar)"]
-    FH --> Pages["GET /, /playground, robots.txt, sitemap.xml<br/>Razor components, server-rendered"]
+    FH --> Pages["GET /, /playground, /llms.txt, robots.txt, sitemap.xml<br/>Razor components, server-rendered"]
     FH --> Info["GET /api/info"]
     Pages --> SI["SiteInfo<br/>site, index, stats, endpoint URLs"]
     Info --> SI
@@ -370,6 +370,8 @@ flowchart TB
 | `PlaygroundPage` | The MCP playground: a server-rendered page whose inline script is a minimal Streamable HTTP client (initialize, tools/list, tools/call), with forms generated from input schemas. It writes server data with `textContent` only. |
 | `PageEndpoints`, `LandingPage`, `PageShell` | The landing page as a Razor component rendered on the server through `RazorComponentResult`, plus `robots.txt` and `sitemap.xml`. `PageShell` holds the document head (description, canonical, Open Graph, schema.org) and the inlined styles. |
 | `CloudflareClientIpMiddleware` | Behind Cloudflare, replaces the connection's remote address with `CF-Connecting-IP` when the caller is inside `Cloudflare:TrustedNetworks`, and tags the request's Activity with `cloudflare.ray_id`, `cloudflare.country` and `client.address`. A pass-through otherwise. |
+| `ResponseHeadersMiddleware` | Sets `Content-Security-Policy: frame-ancestors`, `X-Frame-Options`, `X-Content-Type-Options` and `Referrer-Policy` on every response, before the limiter and the endpoints run, so their answers carry them too. `Ui:FrameAncestors` turns the deny-all policy into an origin list. |
+| `HeadSupport` | The `AllowHead` endpoint convention: adds `HEAD` to a `GET` endpoint's method metadata so link checkers and monitors get the headers without a body instead of `405`. Every page and JSON endpoint uses it. |
 | `BodyLoggingMiddleware`, `SecretRedactor` | Opt-in (`Telemetry:LogBodies`) logging of `/mcp` and `/api/search` bodies: wraps the request and response streams so bytes are copied, up to 8 KB, as they pass and never held back; allowlisted headers; credentials masked. |
 | `ServerDiagnostics`, `TelemetrySetup` | The server's ActivitySource, Meter and instruments; OpenTelemetry registration, the exporter choice and the flush on shutdown. |
 | `Program` | Wiring: options, CORS policies bound from options, rate limiter partitioned by IP, API key middleware, request logging, telemetry, endpoints, the startup summary line. |
@@ -459,6 +461,16 @@ URL, look the page up in the store, return its Markdown and metadata, or a tool 
   server at all.
 - **Body logging** is a middleware in front of CORS and the limiter, so rejected requests are
   logged too, with whatever body the handler read. It is off unless `Telemetry:LogBodies` is set.
+- **Response headers.** `ResponseHeadersMiddleware` runs right after body logging and sets
+  `Content-Security-Policy: frame-ancestors 'none'` with `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin` on every
+  response, the limiter's `429` and the transport's answers included. The pages render an API key
+  field and buttons that call the tools, so no other site may frame them. `Ui:FrameAncestors`
+  lists origins that may; `X-Frame-Options` is then left out because it cannot carry a list.
+- **HEAD** is answered by every page and JSON endpoint through the `AllowHead` convention
+  (`HeadSupport`), since minimal API routing otherwise matches `HEAD` only against endpoints that
+  declare it. Kestrel drops the body. A browser sending `GET` or `HEAD` to `Mcp:Path` without
+  `text/event-stream` in `Accept` is redirected to `/` while `Ui:Enabled` is on.
 - **API key** is a tiny middleware on the MCP path only, comparing in constant time. The search API is
   intentionally keyless because it is called from browsers.
 - **CORS** policies always exist and are bound from options at run time; an empty origin list simply
@@ -615,9 +627,12 @@ src/
     Index/                         IndexHolder, IndexLoader, IndexRefreshService
     Search/                        SiteSearchService
     Telemetry/                     ServerDiagnostics, TelemetrySetup
-    Requests/                      CloudflareClientIpMiddleware, BodyLoggingMiddleware, SecretRedactor
+    Requests/                      CloudflareClientIpMiddleware, BodyLoggingMiddleware, SecretRedactor,
+                                   ResponseHeadersMiddleware, HeadSupport
+    Pages/                         PageEndpoints, LandingPage, PlaygroundPage, PageShell (Razor),
+                                   PageAssets (inlined styles and scripts), LlmsTxt
     Mcp/                           SiteTools
-    Api/                           SearchEndpoints
+    Api/                           SearchEndpoints, InfoEndpoints (SiteInfo, /api/info), OpenApiSetup
     appsettings.json, Dockerfile
 tests/
   McpMySite.Tests/                 Core/, Indexer/, Server/, TestIndex (fixture builder), CapturedLogs, FakeCollector

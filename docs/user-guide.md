@@ -3,7 +3,7 @@
 Install, configure and run mcp-my-site: the indexer that turns a website into a search index, and the
 server that exposes that index to AI agents over MCP and to visitors over a search API.
 
-This guide covers version 0.1 (V1). Everything in it was checked against the code; where behaviour is
+This guide covers version 0.2.2. Everything in it was checked against the code; where behaviour is
 a deliberate design choice, the guide says so.
 
 ## Contents
@@ -132,7 +132,7 @@ The published folder is self-contained apart from the .NET 10 runtime. Configura
 ### 3.4 The server as a container
 
 Every release is published to GitHub Container Registry as
-`ghcr.io/pournasserian/mcp-my-site`, tagged with the version (`0.1.0`, `0.1`) and `latest`; pull
+`ghcr.io/pournasserian/mcp-my-site`, tagged with the version (`0.2.2`, `0.2`) and `latest`; pull
 it and skip the build below. To build it yourself, the Dockerfile lives at
 `src/McpMySite.Server/Dockerfile` and must be built from the repository root:
 
@@ -475,7 +475,7 @@ which is why their shipped defaults are empty.
 | `Crawl:Concurrency` | int | `4` | Parallel requests. |
 | `Crawl:DelayMilliseconds` | int | `0` | Pause before each request. Use with a low concurrency for fragile hosts. |
 | `Crawl:TimeoutSeconds` | int | `30` | Per request. Minimum 5. |
-| `Crawl:UserAgent` | string | `McpMySiteIndexer/0.1 (+https://github.com/pournasserian/mcp-my-site)` | Sent with every request. The robots.txt group `User-agent: McpMySiteIndexer` targets this crawler. |
+| `Crawl:UserAgent` | string | `McpMySiteIndexer/0.2 (+https://github.com/pournasserian/mcp-my-site)` | Sent with every request. The robots.txt group `User-agent: McpMySiteIndexer` targets this crawler. |
 | `Chunking:MaxChars` | int | `1500` | Upper bound for a chunk. Roughly 350 tokens. |
 | `Chunking:MinChars` | int | `200` | Chunks shorter than this are merged with a neighbour. |
 | `Embeddings:Enabled` | bool | `true` | `false` builds a keyword-only index: no vectors, no provider, no key. The other `Embeddings` settings are then ignored. Section 5.5. |
@@ -1287,7 +1287,7 @@ docker run --rm -p 8080:8080 \
   -e Index__Url=https://example.com/index/ \
   -e Ui__PublicUrl=https://mcp.example.com \
   -e AI_API_KEY \
-  ghcr.io/pournasserian/mcp-my-site:0.1.0
+  ghcr.io/pournasserian/mcp-my-site:0.2.2
 ```
 
 To build it yourself instead, build the image from `src/McpMySite.Server/Dockerfile` with the
@@ -1575,14 +1575,14 @@ full re-embed on the next build; the index records what it was built with and th
 
 **Can I index several sites?**
 One site per index and per server, by design. Run one server per site (they are small). Multi-site
-hosting is out of scope for V1.
+hosting is out of scope for now.
 
 **My site is a JavaScript app. Will it work?**
 Not from a live crawl: the indexer fetches HTML over plain HTTP and does not run scripts. If your
 build can prerender pages to static HTML, index that folder with `Source:Type` set to `Folder`.
 
 **PDFs, Word documents, images?**
-Not indexed. HTML only in V1.
+Not indexed. HTML only, for now.
 
 **How often should I rebuild?**
 On every deploy of the site, or nightly. Rebuilds are full but cheap: the cache means only changed
@@ -1627,9 +1627,9 @@ It is stateless: no sessions, no server-to-client requests. Run as many instance
 any load balancer.
 
 **How do I authenticate MCP clients?**
-V1 offers a static API key (`Mcp:ApiKey`) sent as a bearer token or `X-Api-Key` header, plus per-IP
-rate limiting for the public mode. OAuth is not built in; put an API gateway
-in front if you need it.
+The server offers a static API key (`Mcp:ApiKey`) sent as a bearer token or `X-Api-Key` header,
+plus per-IP rate limiting for the public mode. OAuth is not built in; put an API gateway in front if
+you need it.
 
 **Can I change what the agent is told about the site?**
 Yes. `Instructions:Preamble` in the indexer config prepends text to the generated outline;
@@ -1657,8 +1657,8 @@ No. Both tools are read-only.
 No, and the rate limit is sized for search on submit.
 
 **Is a chat endpoint included?**
-Not in V1. An OpenAI-compatible chat API (Chat Completions and Responses, streaming) built on
-Microsoft Agent Framework is planned for V2.
+Not yet. An OpenAI-compatible chat API (Chat Completions and Responses, streaming) built on
+Microsoft Agent Framework is planned for a later release.
 
 **Does it need Azure?**
 No. The server is a plain container that runs anywhere. Application Insights is one optional telemetry
