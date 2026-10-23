@@ -129,6 +129,7 @@ if (rateLimitOptions.UseForwardedHeaders)
 // straight through unless Cloudflare:TrustConnectingIp or Telemetry:LogBodies asks for them.
 app.UseMiddleware<CloudflareClientIpMiddleware>();
 app.UseMiddleware<BodyLoggingMiddleware>();
+app.UseMiddleware<ResponseHeadersMiddleware>();
 
 app.UseCors();
 app.UseRateLimiter();

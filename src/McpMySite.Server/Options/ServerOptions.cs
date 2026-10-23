@@ -65,6 +65,9 @@ public sealed class UiOptions
 
     /// <summary>The landing page flags the index as out of date when it is older than this. 0 never does.</summary>
     public int StaleAfterDays { get; set; } = 30;
+
+    /// <summary>Origins allowed to embed the pages in a frame, as CSP frame-ancestors sources. Empty denies framing everywhere.</summary>
+    public string[] FrameAncestors { get; set; } = [];
 }
 
 public sealed class RateLimitOptions
