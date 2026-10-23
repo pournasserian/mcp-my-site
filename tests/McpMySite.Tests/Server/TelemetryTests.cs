@@ -216,6 +216,7 @@ public class ServerExportTests
         Assert.True(collector.Received("/v1/traces", "tools/call"), "No MCP SDK span.");
         Assert.True(collector.Received("/v1/metrics", "mcpmysite.search.requests"), "No search metric.");
         Assert.True(collector.Received("/v1/metrics", "mcpmysite.index.age"), "No index age gauge.");
+        Assert.True(collector.Received("/v1/metrics", "http.server.request.duration"), "No ASP.NET Core metric.");
         Assert.True(collector.Received("/v1/logs", "Search (api) ->"), "No search log.");
         Assert.True(collector.Received("/v1/logs", "Loading the index from"), "No startup log.");
         Assert.True(collector.Received("/v1/logs", "telemetry export Otlp"), "No startup summary.");
@@ -243,9 +244,63 @@ public class ServerExportTests
 
         Assert.True(collector.Received("/v2.1/track", "\"name\":\"mcpmysite.search\""), $"No search span. Received: {string.Join(", ", collector.Paths)}");
         Assert.True(collector.Received("/v2.1/track", "\"name\":\"mcpmysite.search.requests\""), "No search metric.");
+        Assert.True(collector.Received("/v2.1/track", "\"name\":\"http.server.request.duration\""), "No ASP.NET Core metric.");
         Assert.True(collector.Received("/v2.1/track", "\"message\":\"Search (api) -"), "No search log.");
         Assert.True(collector.Received("/v2.1/track", "Loading the index from"), "No startup log.");
         Assert.True(collector.Received("/v2.1/track", "telemetry export AzureMonitor"), "No startup summary.");
+    }
+
+    [Fact]
+    public async Task MetricGroupsLeftOutAreNotExportedOverOtlp()
+    {
+        await using var collector = await FakeCollector.StartAsync();
+        var (factory, client) = await LoggedServer.StartAsync(new CapturedLogs(), [], new()
+        {
+            ["Telemetry:Metrics"] = "Server",
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = collector.Endpoint,
+            ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf",
+        });
+
+        using (factory)
+        using (client)
+        {
+            await ExerciseAsync(factory, client);
+        }
+
+        Assert.True(collector.Received("/v1/metrics", "mcpmysite.search.requests"), $"No search metric. Received: {string.Join(", ", collector.Paths)}");
+        Assert.False(collector.Received("/v1/metrics", "http.server."), "ASP.NET Core metrics were exported.");
+        Assert.False(collector.Received("/v1/metrics", "kestrel."), "Kestrel metrics were exported.");
+        Assert.False(collector.Received("/v1/metrics", "http.client."), "HTTP client metrics were exported.");
+        Assert.False(collector.Received("/v1/metrics", "dotnet."), "Runtime metrics were exported.");
+        Assert.True(collector.Received("/v1/logs", "metrics Server,"), "The startup summary does not name the groups.");
+    }
+
+    /// <summary>
+    /// The Azure Monitor distro enables the HTTP server and client meters itself, so leaving the instrumentation out
+    /// would not be enough; the drop has to hold for its meters too.
+    /// </summary>
+    [Fact]
+    public async Task MetricGroupsLeftOutAreNotExportedToApplicationInsights()
+    {
+        await using var collector = await FakeCollector.StartAsync();
+        var (factory, client) = await LoggedServer.StartAsync(new CapturedLogs(), [], new()
+        {
+            ["Telemetry:Metrics"] = "Server, Runtime",
+            ["APPLICATIONINSIGHTS_CONNECTION_STRING"] = collector.AzureMonitorConnectionString + $";LiveEndpoint={collector.Endpoint}/",
+            ["AzureMonitor:EnableLiveMetrics"] = "false",
+            ["AzureMonitor:TracesPerSecond"] = "",
+            ["AzureMonitor:SamplingRatio"] = "1",
+        });
+
+        using (factory)
+        using (client)
+        {
+            await ExerciseAsync(factory, client);
+        }
+
+        Assert.True(collector.Received("/v2.1/track", "\"name\":\"mcpmysite.search.requests\""), $"No search metric. Received: {string.Join(", ", collector.Paths)}");
+        Assert.False(collector.Received("/v2.1/track", "\"name\":\"http.server."), "ASP.NET Core metrics were exported.");
+        Assert.False(collector.Received("/v2.1/track", "\"name\":\"http.client."), "HTTP client metrics were exported.");
     }
 
     [Fact]
@@ -305,9 +360,9 @@ public class ServerTelemetryUnitTests
         var logs = new CapturedLogs();
         using var search = Search(await LoadedHolderAsync(), logs);
 
-        await search.SearchAsync("rockets", 5, "api", CancellationToken.None);
-        await search.SearchAsync("widgets", 5, "api", CancellationToken.None);
-        await search.SearchAsync("gears", 5, "mcp", CancellationToken.None);
+        await search.SearchAsync("rockets", 5, 0, "api", CancellationToken.None);
+        await search.SearchAsync("widgets", 5, 0, "api", CancellationToken.None);
+        await search.SearchAsync("gears", 5, 0, "mcp", CancellationToken.None);
 
         Assert.Single(logs.Entries, e => e.Level == LogLevel.Warning);
         Assert.Equal(2, logs.Entries.Count(e => e.Level == LogLevel.Debug && e.Message.StartsWith("Embedding failed again", StringComparison.Ordinal)));
@@ -322,7 +377,7 @@ public class ServerTelemetryUnitTests
         var logs = new CapturedLogs();
         using var search = Search(await LoadedHolderAsync(), logs, logQueryText);
 
-        await search.SearchAsync("kerosene", 5, "api", CancellationToken.None);
+        await search.SearchAsync("kerosene", 5, 0, "api", CancellationToken.None);
         await search.FetchAsync("https://example.test/guessed-page", "mcp", CancellationToken.None);
 
         Assert.Equal(logQueryText, logs.Entries.Any(e => e.Message.Contains("kerosene", StringComparison.Ordinal)));
@@ -335,7 +390,7 @@ public class ServerTelemetryUnitTests
         var logs = new CapturedLogs();
         using var search = Search(new IndexHolder(), logs);
 
-        await Assert.ThrowsAsync<IndexUnavailableException>(() => search.SearchAsync("rockets", 5, "api", CancellationToken.None));
+        await Assert.ThrowsAsync<IndexUnavailableException>(() => search.SearchAsync("rockets", 5, 0, "api", CancellationToken.None));
 
         Assert.Contains(logs.Entries, e => e.Level == LogLevel.Warning && e.Message.StartsWith("Search (api) refused: No index is loaded", StringComparison.Ordinal));
     }
@@ -390,99 +445,6 @@ public class ServerTelemetryUnitTests
         Assert.DoesNotContain(logs.Entries, e => e.Message.Contains("TOPSECRETSIGNATURE", StringComparison.Ordinal));
 
         await app.StopAsync();
-    }
-}
-
-public class MetricGroupTests
-{
-    [Fact]
-    public void EmptySettingMeansEveryGroup()
-    {
-        Assert.Equal(TelemetrySetup.MetricGroups.ToHashSet(), TelemetrySetup.ParseMetricGroups(null));
-        Assert.Equal(TelemetrySetup.MetricGroups.ToHashSet(), TelemetrySetup.ParseMetricGroups(" "));
-        Assert.Equal(["runtime", "server"], TelemetrySetup.ParseMetricGroups("Server, runtime").Order());
-    }
-
-    [Fact]
-    public void UnknownGroupFailsStartup()
-    {
-        var builder = WebApplication.CreateBuilder();
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Telemetry:Metrics"] = "server, kestrel" });
-
-        var error = Assert.Throws<InvalidOperationException>(() => builder.AddSiteTelemetry());
-        Assert.Contains("kestrel", error.Message);
-        Assert.Contains("server, aspnetcore, httpclient, runtime", error.Message);
-    }
-
-    [Fact]
-    public void IntervalIsRejectedWithAzureMonitor()
-    {
-        var builder = WebApplication.CreateBuilder();
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["APPLICATIONINSIGHTS_CONNECTION_STRING"] = "InstrumentationKey=00000000-0000-0000-0000-000000000000",
-            ["Telemetry:MetricExportIntervalSeconds"] = "300",
-        });
-
-        var error = Assert.Throws<InvalidOperationException>(() => builder.AddSiteTelemetry());
-        Assert.Contains("AzureMonitor", error.Message);
-    }
-
-    [Theory]
-    [InlineData(null, true)]
-    [InlineData("server, runtime", true)]
-    [InlineData("server", false)]
-    public async Task OnlyTheNamedGroupsAreExported(string? groups, bool runtime)
-    {
-        // Telemetry settings are read while Program runs, so they go in as host settings like the exporter's.
-        await using var collector = await FakeCollector.StartAsync();
-        var (factory, client) = await LoggedServer.StartAsync(new CapturedLogs(), [], new()
-        {
-            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = collector.Endpoint,
-            ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf",
-            ["Telemetry:Metrics"] = groups,
-            ["Telemetry:MetricExportIntervalSeconds"] = "600",
-        });
-
-        using (factory)
-        using (client)
-        {
-            (await client.GetAsync("/api/search?q=rockets")).EnsureSuccessStatusCode();
-            TelemetrySetup.FlushTelemetry(factory.Services);
-        }
-
-        var exported = string.Join(", ", System.Text.RegularExpressions.Regex.Matches(collector.Dump(), @"\b(dotnet|http|kestrel|process|mcpmysite)\.[a-z_.]+").Select(m => m.Value).Distinct().Order());
-        Assert.True(collector.Received("/v1/metrics", "mcpmysite.search.requests"), "No search metric. Exported: " + exported);
-        Assert.True(runtime == collector.Received("/v1/metrics", "dotnet.gc."), "Exported: " + exported);
-
-        // Request metrics are recorded as a request completes, which can be after the flush, so the groups that
-        // have them are only checked for absence.
-        var http = collector.Received("/v1/metrics", "http.client.") || collector.Received("/v1/metrics", "http.server.") || collector.Received("/v1/metrics", "kestrel.");
-        Assert.True(groups is null || !http, "Exported: " + exported);
-    }
-
-    [Fact]
-    public async Task AzureMonitorDoesNotBringBackAGroupLeftOut()
-    {
-        await using var collector = await FakeCollector.StartAsync();
-        var (factory, client) = await LoggedServer.StartAsync(new CapturedLogs(), [], new()
-        {
-            ["APPLICATIONINSIGHTS_CONNECTION_STRING"] = collector.AzureMonitorConnectionString + $";LiveEndpoint={collector.Endpoint}/",
-            ["AzureMonitor:EnableLiveMetrics"] = "false",
-            ["AzureMonitor:EnableStandardMetrics"] = "false",
-            ["Telemetry:Metrics"] = "server",
-        });
-
-        using (factory)
-        using (client)
-        {
-            (await client.GetAsync("/api/search?q=rockets")).EnsureSuccessStatusCode();
-            TelemetrySetup.FlushTelemetry(factory.Services);
-        }
-
-        // The distro registers the ASP.NET Core and HttpClient meters on its own; the view must still drop them.
-        Assert.True(collector.Received("/v2.1/track", "\"name\":\"mcpmysite.search.requests\""), $"No search metric. Received: {collector.Dump()}");
-        Assert.False(collector.Received("/v2.1/track", "\"name\":\"http.server.") || collector.Received("/v2.1/track", "\"name\":\"http.client."), collector.Dump());
     }
 }
 

@@ -23,13 +23,14 @@ public sealed class SiteSearchService : IDisposable
         _logger = logger;
     }
 
-    public async Task<SearchResponse> SearchAsync(string query, int limit, string channel, CancellationToken cancellationToken)
+    public async Task<SearchResponse> SearchAsync(string query, int limit, int offset, string channel, CancellationToken cancellationToken)
     {
         using var activity = ServerDiagnostics.ActivitySource.StartActivity("mcpmysite.search");
         var client = McpClientTags.Current;
         client?.Apply(activity);
         activity?.SetTag("mcpmysite.channel", channel);
         activity?.SetTag("mcpmysite.limit", limit);
+        activity?.SetTag("mcpmysite.offset", offset);
         if (_telemetry.LogQueryText)
         {
             activity?.SetTag("mcpmysite.query", query);
@@ -69,7 +70,7 @@ public sealed class SiteSearchService : IDisposable
             }
         }
 
-        var response = await store.SearchAsync(new SearchRequest { Query = query, QueryVector = vector, Limit = limit }, cancellationToken);
+        var response = await store.SearchAsync(new SearchRequest { Query = query, QueryVector = vector, Limit = limit, Offset = offset }, cancellationToken);
         var elapsed = stopwatch.Elapsed.TotalMilliseconds;
 
         var tags = new TagList { { "channel", channel }, { "fallback", fallback } };

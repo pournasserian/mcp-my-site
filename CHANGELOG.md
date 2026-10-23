@@ -8,11 +8,17 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
-- `Telemetry:Metrics` names the instrument groups the server exports (`server`, `aspnetcore`,
-  `httpclient`, `runtime`; default all four), so a deployment can drop the ASP.NET Core, HttpClient
-  and runtime series that make up most of the metric volume, and
-  `Telemetry:MetricExportIntervalSeconds` spaces metric exports out with the OTLP exporter. An
-  unknown group name stops the server at startup (#46).
+- `GET {Mcp:Path}/server-card` serves the MCP server card of SEP-2127 as
+  `application/mcp-server-card+json`: the registry name, version and repository, the site's name,
+  and one `remotes` entry with the public MCP URL, the supported protocol versions and the
+  `Authorization` header when `Mcp:ApiKey` is set. Cached for an hour with an `ETag`, open to every
+  origin, rate limited, and reachable without the key (#53).
+- The search API and the MCP `search` tool page through results: `offset` skips that many pages
+  of the same ranking, capped by the new `SearchApi:MaxOffset` setting (default 100), and every
+  response carries `total` and `hasMore` (#62).
+- `Telemetry:Metrics` names the metric groups the server exports (`Server`, `AspNetCore`,
+  `HttpClient`, `Runtime`; default all), so a deployment can drop the HTTP client and runtime series
+  that make up most of what a workspace ingests. The startup line names the groups in use (#46).
 - The MCP SDK's spans and the server's `mcpmysite.search` and `mcpmysite.fetch` spans and counters
   carry `mcp.client.name`, `mcp.client.version` and `mcp.protocol.version` from the client's
   `clientInfo`; on the stateless transport the client is known on `initialize` and, from the
@@ -20,6 +26,11 @@ All notable changes to this project are recorded here. The format follows
 
 ### Changed
 
+- The architecture document describes `ResponseHeadersMiddleware` and `HeadSupport`, the response
+  headers and `HEAD` handling, and lists the `Pages/` folder and the `Api/` files that had been added
+  since it was written. The user guide names the current version instead of "0.1 (V1)" and uses the
+  current image tag in its examples. The indexer's default `Crawl:UserAgent` is now
+  `McpMySiteIndexer/0.2` (#63).
 - The user guide gives the current reason for the 2,000-character cap on server instructions:
   Claude Code cuts them at 4,096 characters (2,048 before v2.1.296), so the cap keeps the text
   whole in both (#54).

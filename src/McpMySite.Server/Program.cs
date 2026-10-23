@@ -65,6 +65,8 @@ services.AddOptions<CorsOptions>().Configure<IOptions<SearchApiOptions>, IOption
         .WithMethods("GET", "POST", "DELETE")
         .WithHeaders("Content-Type", "Authorization", "X-Api-Key", "MCP-Protocol-Version", "Mcp-Session-Id")
         .WithExposedHeaders("Mcp-Session-Id"));
+    // The card is a public discovery document (SEP-2127): any origin may read it, with its ETag.
+    cors.AddPolicy(ServerCard.CorsPolicy, policy => policy.AllowAnyOrigin().WithMethods("GET").WithHeaders("Content-Type", "If-None-Match").WithExposedHeaders("ETag"));
 });
 
 services.AddRateLimiter(options =>
@@ -144,8 +146,9 @@ app.UseWhen(context => IsBrowserOnMcpEndpoint(context, mcpOptions.Path) && conte
     return Task.CompletedTask;
 }));
 
-// Optional API key on the MCP endpoint only; the search API is public by design.
-app.UseWhen(context => context.Request.Path.StartsWithSegments(mcpOptions.Path), branch => branch.Use(async (context, next) =>
+// Optional API key on the MCP endpoint only; the search API is public by design, and so is the server card under the
+// MCP path, which exists to tell a client that the key is needed.
+app.UseWhen(context => context.Request.Path.StartsWithSegments(mcpOptions.Path, out var remaining) && remaining != ServerCard.PathSuffix, branch => branch.Use(async (context, next) =>
 {
     var expected = context.RequestServices.GetRequiredService<IOptions<McpOptions>>().Value.ApiKey;
     if (string.IsNullOrWhiteSpace(expected))
@@ -176,6 +179,7 @@ app.UseWhen(context => context.Request.Path.StartsWithSegments(mcpOptions.Path),
 app.MapMcp(mcpOptions.Path)
     .RequireRateLimiting(SearchEndpoints.RateLimitPolicy)
     .RequireCors(McpCorsPolicy);
+app.MapServerCard(mcpOptions);
 
 if (searchApiOptions.Enabled)
 {
@@ -222,7 +226,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
     var telemetryOptions = app.Services.GetRequiredService<IOptions<TelemetryOptions>>().Value;
     var cloudflareOptions = app.Services.GetRequiredService<IOptions<CloudflareOptions>>().Value;
     startupLogger.LogInformation(
-        "mcp-my-site {Version} ({Environment}): MCP at {McpPath} (API key {ApiKey}), search API {SearchApi}, pages {Pages}, embeddings at {EmbeddingEndpoint}, telemetry export {Exporter}, query text logging {LogQueryText}, body logging {LogBodies}, Cloudflare client IP {CloudflareClientIp}",
+        "mcp-my-site {Version} ({Environment}): MCP at {McpPath} (API key {ApiKey}), search API {SearchApi}, pages {Pages}, embeddings at {EmbeddingEndpoint}, telemetry export {Exporter}, metrics {Metrics}, query text logging {LogQueryText}, body logging {LogBodies}, Cloudflare client IP {CloudflareClientIp}",
         typeof(Program).Assembly.GetName().Version?.ToString(3),
         app.Environment.EnvironmentName,
         mcpOptions.Path,
@@ -231,6 +235,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
         uiOptions.Enabled ? "on" : "off",
         embeddingOptions.Enabled ? embeddingOptions.Endpoint : "off",
         telemetryExporter,
+        telemetryOptions.Metrics,
         telemetryOptions.LogQueryText ? "on" : "off",
         telemetryOptions.LogBodies ? "on" : "off",
         cloudflareOptions.TrustConnectingIp && cloudflareOptions.TrustedNetworks.Length > 0 ? "on" : "off");

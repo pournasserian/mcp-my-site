@@ -33,13 +33,15 @@ public static class HybridRanker
         }
     }
 
-    /// <summary>Keeps the best chunk per page and builds the hit list.</summary>
-    public static List<SearchHit> ToPageHits(
+    /// <summary>
+    /// Keeps the best chunk per page, skips the first <see cref="SearchRequest.Offset"/> pages and builds the hit
+    /// list, counting every distinct page in <paramref name="fused"/> for the total.
+    /// </summary>
+    public static SearchResponse ToPageHits(
         IReadOnlyList<(int ChunkId, double Score)> fused,
         Func<int, ChunkCandidate> chunkLookup,
         Func<int, PageDocument> pageLookup,
-        string query,
-        int limit)
+        SearchRequest request)
     {
         var hits = new List<SearchHit>();
         var seenPages = new HashSet<int>();
@@ -51,8 +53,13 @@ public static class HybridRanker
                 continue;
             }
 
+            if (seenPages.Count <= request.Offset || hits.Count >= request.Limit)
+            {
+                continue;
+            }
+
             var page = pageLookup(chunk.PageId);
-            var (plain, highlighted) = Snippets.Build(chunk.Text, query);
+            var (plain, highlighted) = Snippets.Build(chunk.Text, request.Query);
             hits.Add(new SearchHit
             {
                 Url = page.Url,
@@ -64,13 +71,14 @@ public static class HybridRanker
                 HeadingPath = chunk.HeadingPath,
                 ChunkId = chunkId,
             });
-
-            if (hits.Count >= limit)
-            {
-                break;
-            }
         }
 
-        return hits;
+        return new SearchResponse
+        {
+            Hits = hits,
+            KeywordOnly = request.QueryVector is null,
+            Total = seenPages.Count,
+            HasMore = request.Offset + hits.Count < seenPages.Count,
+        };
     }
 }

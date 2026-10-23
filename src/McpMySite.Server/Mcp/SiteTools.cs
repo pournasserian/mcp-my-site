@@ -5,17 +5,18 @@ namespace McpMySite.Server.Mcp;
 /// connectors and deep research (results carry an id, fetch takes it and returns text), and still accept a url.
 /// </summary>
 [McpServerToolType]
-public sealed class SiteTools(SiteSearchService search)
+public sealed class SiteTools(SiteSearchService search, IOptions<SearchApiOptions> searchApi)
 {
     private const string Channel = "mcp";
     private const string SearchToolName = "search";
     private const int MaxDescriptionChars = 300;
 
     [McpServerTool(Name = SearchToolName, ReadOnly = true, Idempotent = true, OpenWorld = false, Title = "Search the site", UseStructuredContent = true)]
-    [Description("Searches the website's pages with hybrid keyword and semantic search. Returns the best matching pages with a short snippet each. Call fetch with a result's id or URL to read the whole page.")]
+    [Description("Searches the website's pages with hybrid keyword and semantic search. Returns the best matching pages with a short snippet each. When hasMore is true, call again with offset set to the previous offset plus limit to see further results. Call fetch with a result's id or URL to read the whole page.")]
     public async Task<SearchToolResult> SearchAsync(
         [Description("What to look for. Natural language or keywords.")] string query,
         [Description("Maximum number of pages to return, 1 to 20. Default 10.")] int limit = 10,
+        [Description("Pages to skip before the first result, for paging. Default 0; values past the server's cap are clamped.")] int offset = 0,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -25,10 +26,12 @@ public sealed class SiteTools(SiteSearchService search)
 
         try
         {
-            var response = await search.SearchAsync(query.Trim(), Math.Clamp(limit, 1, 20), Channel, cancellationToken);
+            var response = await search.SearchAsync(query.Trim(), Math.Clamp(limit, 1, 20), Math.Clamp(offset, 0, searchApi.Value.MaxOffset), Channel, cancellationToken);
             return new SearchToolResult(
                 query,
                 response.KeywordOnly,
+                response.Total,
+                response.HasMore,
                 response.Hits.Select(h => new SearchToolHit(h.Url, h.Title, h.Url, h.Snippet, h.HeadingPath.Count == 0 ? null : string.Join(" > ", h.HeadingPath), h.Score)).ToList());
         }
         catch (IndexUnavailableException ex)
@@ -101,11 +104,14 @@ public sealed class SiteTools(SiteSearchService search)
         var method = manifest.KeywordOnly ? "Keyword search" : "Hybrid keyword and semantic search";
         return $"Searches the website {site} "
             + $"{method} over its {manifest.PageCount} pages; returns the best matching pages with a short snippet each. "
+            + "When hasMore is true, call again with offset set to the previous offset plus limit to see further results. "
             + "Call fetch with a result's id or URL to read the whole page.";
     }
 }
 
-public sealed record SearchToolResult(string Query, bool KeywordOnly, IReadOnlyList<SearchToolHit> Results);
+/// <param name="Total">Distinct pages that matched, counting those before and after this page of results.</param>
+/// <param name="HasMore">True while a larger offset would return further results.</param>
+public sealed record SearchToolResult(string Query, bool KeywordOnly, int Total, bool HasMore, IReadOnlyList<SearchToolHit> Results);
 
 /// <param name="Id">Identifier to pass to fetch. Currently the page URL.</param>
 public sealed record SearchToolHit(string Id, string Title, string Url, string Snippet, string? Section, double Score);

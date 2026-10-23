@@ -2,9 +2,6 @@ namespace McpMySite.Server.Telemetry;
 
 public static class TelemetrySetup
 {
-    /// <summary>The instrument groups Telemetry:Metrics can name, in the order the setting lists them by default.</summary>
-    public static readonly string[] MetricGroups = ["server", "aspnetcore", "httpclient", "runtime"];
-
     /// <summary>
     /// OpenTelemetry traces, metrics and logs, exported as Telemetry:Exporter says. The console log is set up by the
     /// host from Logging:Console and is written whatever the exporter.
@@ -17,7 +14,6 @@ public static class TelemetrySetup
         var mcp = configuration.GetSection(McpOptions.SectionName).Get<McpOptions>() ?? new McpOptions();
         var connectionString = configuration[TelemetryExport.AzureMonitorConnectionStringKey];
         var exporter = TelemetryExport.Resolve(options.Exporter, connectionString, configuration[TelemetryExport.OtlpEndpointKey]);
-        var groups = ParseMetricGroups(options.Metrics);
 
         var telemetry = builder.Services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
@@ -27,49 +23,12 @@ public static class TelemetrySetup
                 .AddSource(ServerDiagnostics.Name, ServerDiagnostics.McpSdkName, EmbeddingGeneratorFactory.TelemetrySourceName)
                 .AddAspNetCoreInstrumentation(o => o.Filter = context => !context.Request.Path.StartsWithSegments("/healthz"))
                 .AddHttpClientInstrumentation())
-            .WithMetrics(metrics =>
-            {
-                if (groups.Contains("server"))
-                {
-                    metrics.AddMeter(ServerDiagnostics.Name, ServerDiagnostics.McpSdkName, EmbeddingGeneratorFactory.TelemetrySourceName);
-                }
-
-                if (groups.Contains("aspnetcore"))
-                {
-                    metrics.AddAspNetCoreInstrumentation();
-                }
-
-                if (groups.Contains("httpclient"))
-                {
-                    metrics.AddHttpClientInstrumentation();
-                }
-
-                if (groups.Contains("runtime"))
-                {
-                    metrics.AddRuntimeInstrumentation();
-                }
-
-                // The Azure Monitor distro registers the ASP.NET Core and HttpClient meters itself, so a group that was
-                // left out is also dropped by meter name.
-                metrics.AddView(instrument => groups.Contains(MetricGroupOf(instrument.Meter.Name)) ? null : MetricStreamConfiguration.Drop);
-            });
-
-        if (options.MetricExportIntervalSeconds is { } seconds)
-        {
-            if (seconds <= 0)
-            {
-                throw new InvalidOperationException("Telemetry:MetricExportIntervalSeconds must be a positive number of seconds.");
-            }
-
-            // The Azure Monitor exporter builds its own metric reader with a fixed interval of 60 s and offers no setting
-            // for it, so the choice would be silently ignored there.
-            if (exporter == TelemetryExporter.AzureMonitor)
-            {
-                throw new InvalidOperationException("Telemetry:MetricExportIntervalSeconds is not supported by the AzureMonitor exporter, which exports metrics every 60 seconds; leave it unset or use the Otlp exporter.");
-            }
-
-            builder.Services.ConfigureAll<MetricReaderOptions>(o => o.PeriodicExportingMetricReaderOptions.ExportIntervalMilliseconds = seconds * 1000);
-        }
+            .WithMetrics(metrics => metrics
+                .AddMeter(ServerDiagnostics.Name, ServerDiagnostics.McpSdkName, EmbeddingGeneratorFactory.TelemetrySourceName)
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddRuntimeInstrumentation()
+                .DropMetricGroupsNotIn(options.Metrics));
 
         switch (exporter)
         {
@@ -91,29 +50,35 @@ public static class TelemetrySetup
         return exporter;
     }
 
-    /// <summary>The groups named in Telemetry:Metrics, all of them when it is empty. Rejects a name that is not a group.</summary>
-    internal static HashSet<string> ParseMetricGroups(string? setting)
+    private static readonly (MetricGroups Group, string[] Instruments)[] GroupInstruments =
+    [
+        (MetricGroups.Server, ["mcpmysite.*", "mcp.*", "gen_ai.*"]),
+        (MetricGroups.AspNetCore, ["http.server.*", "kestrel.*", "signalr.*", "aspnetcore.*"]),
+        (MetricGroups.HttpClient, ["http.client.*", "dns.*"]),
+        (MetricGroups.Runtime, ["dotnet.*", "process.runtime.dotnet.*"]),
+    ];
+
+    /// <summary>
+    /// Drops the instruments of every group not in <paramref name="enabled"/>. Done with views rather than by leaving
+    /// the instrumentation out, because the Azure Monitor distro enables the HTTP server and client meters on its own.
+    /// </summary>
+    private static MeterProviderBuilder DropMetricGroupsNotIn(this MeterProviderBuilder metrics, MetricGroups enabled)
     {
-        var groups = (setting ?? string.Empty)
-            .Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(g => g.ToLowerInvariant())
-            .ToHashSet();
-        var unknown = groups.Except(MetricGroups).ToList();
-        if (unknown.Count > 0)
+        foreach (var (group, instruments) in GroupInstruments)
         {
-            throw new InvalidOperationException($"Telemetry:Metrics names unknown instrument group {string.Join(", ", unknown)}. The groups are {string.Join(", ", MetricGroups)}.");
+            if (enabled.HasFlag(group))
+            {
+                continue;
+            }
+
+            foreach (var instrument in instruments)
+            {
+                metrics.AddView(instrument, MetricStreamConfiguration.Drop);
+            }
         }
 
-        return groups.Count == 0 ? [.. MetricGroups] : groups;
+        return metrics;
     }
-
-    private static string MetricGroupOf(string meterName) => meterName switch
-    {
-        _ when meterName.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal) => "aspnetcore",
-        _ when meterName.StartsWith("System.Net.", StringComparison.Ordinal) => "httpclient",
-        "System.Runtime" or "OpenTelemetry.Instrumentation.Runtime" => "runtime",
-        _ => "server",
-    };
 
     /// <summary>
     /// Exports what is still buffered once the server has stopped and before its services are disposed. Exporters

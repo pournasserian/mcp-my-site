@@ -3,7 +3,7 @@
 Install, configure and run mcp-my-site: the indexer that turns a website into a search index, and the
 server that exposes that index to AI agents over MCP and to visitors over a search API.
 
-This guide covers version 0.1 (V1). Everything in it was checked against the code; where behaviour is
+This guide covers version 0.2.2. Everything in it was checked against the code; where behaviour is
 a deliberate design choice, the guide says so.
 
 ## Contents
@@ -132,7 +132,7 @@ The published folder is self-contained apart from the .NET 10 runtime. Configura
 ### 3.4 The server as a container
 
 Every release is published to GitHub Container Registry as
-`ghcr.io/pournasserian/mcp-my-site`, tagged with the version (`0.1.0`, `0.1`) and `latest`; pull
+`ghcr.io/pournasserian/mcp-my-site`, tagged with the version (`0.2.2`, `0.2`) and `latest`; pull
 it and skip the build below. To build it yourself, the Dockerfile lives at
 `src/McpMySite.Server/Dockerfile` and must be built from the repository root:
 
@@ -475,7 +475,7 @@ which is why their shipped defaults are empty.
 | `Crawl:Concurrency` | int | `4` | Parallel requests. |
 | `Crawl:DelayMilliseconds` | int | `0` | Pause before each request. Use with a low concurrency for fragile hosts. |
 | `Crawl:TimeoutSeconds` | int | `30` | Per request. Minimum 5. |
-| `Crawl:UserAgent` | string | `McpMySiteIndexer/0.1 (+https://github.com/pournasserian/mcp-my-site)` | Sent with every request. The robots.txt group `User-agent: McpMySiteIndexer` targets this crawler. |
+| `Crawl:UserAgent` | string | `McpMySiteIndexer/0.2 (+https://github.com/pournasserian/mcp-my-site)` | Sent with every request. The robots.txt group `User-agent: McpMySiteIndexer` targets this crawler. |
 | `Chunking:MaxChars` | int | `1500` | Upper bound for a chunk. Roughly 350 tokens. |
 | `Chunking:MinChars` | int | `200` | Chunks shorter than this are merged with a neighbour. |
 | `Embeddings:Enabled` | bool | `true` | `false` builds a keyword-only index: no vectors, no provider, no key. The other `Embeddings` settings are then ignored. Section 5.5. |
@@ -732,6 +732,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:AllowedOrigins` | `[]` | Browser origins allowed to call the search API, typically your site's origin. Empty allows none. |
 | `SearchApi:DefaultLimit` | `10` | Results when `limit` is not given. |
 | `SearchApi:MaxLimit` | `20` | Upper bound for `limit`. |
+| `SearchApi:MaxOffset` | `100` | Upper bound for `offset`, on the search API and the MCP `search` tool. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
 | `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the MCP playground at `/playground`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
 | `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
@@ -742,8 +743,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `Cloudflare:TrustConnectingIp` | `true` | Behind Cloudflare, take the client IP from `CF-Connecting-IP` and tag requests with `CF-Ray` and `CF-IPCountry`. Only believed when the connection comes from `Cloudflare:TrustedNetworks`, so it is inert anywhere else. Section 7.6. |
 | `Cloudflare:TrustedNetworks` | Cloudflare's published ranges | CIDR ranges of the Cloudflare edge, IPv4 and IPv6, from <https://www.cloudflare.com/ips>. Shipped in `appsettings.json`; replace the list when Cloudflare publishes new ranges. |
 | `Telemetry:Exporter` | `Auto` | Where traces, metrics and logs are exported on top of the console log: `Auto` (Application Insights when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, otherwise OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, otherwise nowhere), `None`, `AzureMonitor` or `Otlp`. Section 7.10. |
-| `Telemetry:Metrics` | `server, aspnetcore, httpclient, runtime` | The instrument groups to export, comma separated: `server` (the project's own `mcpmysite.*`, the MCP SDK's `mcp.server.*` and the embedding calls' `gen_ai.*`), `aspnetcore` (`http.server.*`, `kestrel.*`), `httpclient` (`http.client.*`, `dns.*`) and `runtime` (`dotnet.*`). A name that is not a group stops the server at startup. Section 7.10. |
-| `Telemetry:MetricExportIntervalSeconds` | exporter default (60) | Seconds between metric exports with the OTLP exporter. The Azure Monitor exporter exports every 60 seconds and offers no way to change that, so the server refuses to start when it is set with that exporter. |
+| `Telemetry:Metrics` | `All` | The metric groups to export, as a comma-separated list of `Server` (the server's own instruments, the MCP SDK's and the embedding calls), `AspNetCore`, `HttpClient` and `Runtime`, for example `Server, AspNetCore`. The others are dropped before export. Section 7.10. |
 | `Telemetry:LogQueryText` | `false` | Include query text, request query strings, and fetch targets that match no page in logs and trace tags. Off by default because queries can carry personal data. |
 | `Telemetry:LogBodies` | `false` | Log the request and response bodies of `/mcp` and `/api/search`, capped at 8 KB, with an allowlist of headers and credentials masked. Includes what people search for. Section 7.10. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | | Application Insights connection string, for the optional Azure Monitor exporter. |
@@ -784,6 +784,16 @@ URL, and the server picks it up within the poll interval.
 - A person who opens the endpoint's URL in a browser is redirected to the landing page: any `GET` or
   `HEAD` on `Mcp:Path` without `text/event-stream` in `Accept` goes to `/` while `Ui:Enabled` is on.
   With the pages off, the transport answers `405` as the specification says.
+- Discovery: `GET {Mcp:Path}/server-card` answers with the server card of
+  [SEP-2127](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/seps/2127-mcp-server-cards.md)
+  as `application/mcp-server-card+json`: the server's registry name, version, repository, the
+  site's name in `title`, and one `remotes` entry with the public URL of `Mcp:Path` (from
+  `Ui:PublicUrl`, else the request), the protocol versions the server speaks and, when `Mcp:ApiKey`
+  is set, the `Authorization` header a client has to send. The key itself is never in the card, and
+  the card needs no key. It carries no tools or capabilities, which `tools/list` and `initialize`
+  answer for the running server. It is served with `Cache-Control: public, max-age=3600`, an
+  `ETag` (`If-None-Match` gets `304`), CORS for every origin, and the shared rate limit. The early
+  draft address `/.well-known/mcp/server-card.json` is not served.
 - Capabilities: tools only. No resources, no prompts. The `initialize` answer also lists `logging`:
   the MCP SDK answers `logging/setLevel` itself and lists the capability on every server, with no way
   to turn it off; this server never sends `notifications/message`. The `2026-07-28` revision retires
@@ -801,6 +811,7 @@ URL, and the server picks it up within the poll interval.
 |---|---|---|
 | `query` | string, required | Natural language or keywords |
 | `limit` | integer, optional | Pages to return, clamped to 1–20, default 10 |
+| `offset` | integer, optional | Pages to skip before the first result, default 0, clamped to 0–`SearchApi:MaxOffset` |
 
 Returns structured content:
 
@@ -808,6 +819,8 @@ Returns structured content:
 {
   "query": "contact email",
   "keywordOnly": false,
+  "total": 1,
+  "hasMore": false,
   "results": [
     { "id": "https://example.com/contact",
       "title": "Contact", "url": "https://example.com/contact",
@@ -819,7 +832,11 @@ Returns structured content:
 
 `keywordOnly` is `true` when the result came from keyword search alone: the index is keyword-only
 (section 5.5) or the query could not be embedded. Scores are reciprocal-rank-fusion scores, useful for ordering, not as probabilities. `id` is
-what to pass to `fetch`; today it is the page URL.
+what to pass to `fetch`; today it is the page URL. `total` is the number of distinct pages that matched
+and `hasMore` is `true` while a larger `offset` would return further results; the tool description
+tells the model to call again with `offset` set to the previous offset plus `limit`. Every page of
+one query is cut from the same ranking, so hits 11 to 20 with `offset: 10` are the hits 11 to 20 that
+`limit: 20` would return.
 
 **Tool `fetch`**
 
@@ -839,7 +856,7 @@ as a JSON text block for clients that ignore structured content.
 ### 7.5 The search API
 
 ```
-GET /api/search?q=<text>&limit=<n>
+GET /api/search?q=<text>&limit=<n>&offset=<n>
 ```
 
 | Status | When |
@@ -853,6 +870,8 @@ GET /api/search?q=<text>&limit=<n>
 {
   "query": "contact email",
   "keywordOnly": false,
+  "total": 1,
+  "hasMore": false,
   "results": [
     {
       "title": "Contact",
@@ -871,6 +890,11 @@ GET /api/search?q=<text>&limit=<n>
 inserted into the page as HTML. `title` and `description` are plain text and must be escaped by the
 caller. Search runs on submit only; there is no search-as-you-type endpoint, and the per-IP rate limit
 is sized for that.
+
+`offset` skips that many results, so `limit=10&offset=10` returns hits 11 to 20 of the same ranking
+that `limit=20` returns. `total` counts the distinct pages that matched and `hasMore` says whether a
+larger `offset` would return more; an offset past the last hit returns an empty `results` with
+`hasMore: false`. Out-of-range values of `limit` and `offset` are clamped, not rejected.
 
 The API is described by an OpenAPI 3.1 document at `/openapi/v1.json`, titled after the loaded site.
 Point a client generator or an API tool at it. `/docs` renders the same document as an interactive
@@ -1062,7 +1086,7 @@ Besides incoming requests, outgoing HTTP calls and .NET runtime metrics, the ser
 
 | Signal | Name | Tags |
 |---|---|---|
-| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`), and the MCP client tags below |
+| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.offset`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`), and the MCP client tags below |
 | Span | `mcpmysite.fetch` | `mcpmysite.channel`, `mcpmysite.found`, `mcpmysite.url` (pages found; misses only with `Telemetry:LogQueryText`), and the MCP client tags below |
 | Span | `mcpmysite.index.load` | `mcpmysite.index.source` (`path` or `url`), `mcpmysite.index.outcome` |
 | Counter | `mcpmysite.search.requests` | `channel` (`mcp` or `api`), `fallback` (`true` when keyword-only), and the MCP client tags below |
@@ -1074,6 +1098,15 @@ Besides incoming requests, outgoing HTTP calls and .NET runtime metrics, the ser
 | Counter | `mcpmysite.requests.rejected` | `reason`: `api_key` or `rate_limit` |
 | Gauge | `mcpmysite.index.age` (s) | Time since the loaded index was built. Alert on it to catch a rebuild that stopped running. |
 | Gauge | `mcpmysite.index.pages` | Pages in the loaded index. |
+
+**Choosing what is exported.** The ASP.NET Core, HTTP client and runtime instruments are most of the
+metric volume: one row per tag set every minute, and `http.client.open_connections`,
+`http.client.active_requests` and the per-generation GC series alone can be nine tenths of what a
+workspace ingests. `Telemetry:Metrics` names the groups to keep, for example `Server, AspNetCore`
+(as an environment variable, `Telemetry__Metrics=Server,AspNetCore`). The rest are dropped before
+export, including the HTTP meters the Application Insights distro enables on its own. Metrics are
+exported once a minute. With `Otlp`, the standard `OTEL_METRIC_EXPORT_INTERVAL` (milliseconds)
+changes that; the Application Insights exporter fixes its interval and offers no setting for it.
 
 Behind Cloudflare, each request span also carries `cloudflare.ray_id` (from `CF-Ray`),
 `cloudflare.country` (from `CF-IPCountry`) and `client.address` (the visitor, section 7.6). They are
@@ -1098,16 +1131,6 @@ assistants connect and which fail there; `tools/call` requests carry the protoco
 header and no client name. On the `2026-07-28` revision every request names the client in its
 `_meta`, so every span and counter is tagged. The SDK's own `mcp.server.*` metrics have no hook for
 extra tags and stay as they are.
-
-**Metric volume.** Most of the metric volume comes from the ASP.NET Core, HttpClient and runtime
-instrumentation, exported once a minute per tag set, not from the server's own instruments.
-`Telemetry:Metrics` names the groups to export, comma separated: `server` (the tables above, the MCP
-SDK's and the embedding instruments), `aspnetcore`, `httpclient` and `runtime`. The default is all
-four; `Telemetry__Metrics=server` keeps only the server's own series, and a group left out is dropped
-even when the Azure Monitor exporter registers it on its own. A name that is not a group stops the
-server at startup. `Telemetry:MetricExportIntervalSeconds` spaces the exports out with the OTLP
-exporter; the Azure Monitor exporter exports every 60 seconds and offers no setting for it, so the
-server refuses to start when the interval is set with that exporter.
 
 The indexer reports as service `mcpmysite-indexer`:
 
@@ -1270,7 +1293,8 @@ curl -s https://example.com/mcp \
 ```
 
 Style `mark` to match your site. Because requests are rate limited per visitor IP, do not fire a
-request on every keystroke.
+request on every keystroke. For a "load more" button, request the same `q` again with
+`offset` set to the number of results shown so far while the response says `hasMore: true`.
 
 ## 10. Deployment
 
@@ -1299,7 +1323,7 @@ docker run --rm -p 8080:8080 \
   -e Index__Url=https://example.com/index/ \
   -e Ui__PublicUrl=https://mcp.example.com \
   -e AI_API_KEY \
-  ghcr.io/pournasserian/mcp-my-site:0.1.0
+  ghcr.io/pournasserian/mcp-my-site:0.2.2
 ```
 
 To build it yourself instead, build the image from `src/McpMySite.Server/Dockerfile` with the
@@ -1587,14 +1611,14 @@ full re-embed on the next build; the index records what it was built with and th
 
 **Can I index several sites?**
 One site per index and per server, by design. Run one server per site (they are small). Multi-site
-hosting is out of scope for V1.
+hosting is out of scope for now.
 
 **My site is a JavaScript app. Will it work?**
 Not from a live crawl: the indexer fetches HTML over plain HTTP and does not run scripts. If your
 build can prerender pages to static HTML, index that folder with `Source:Type` set to `Folder`.
 
 **PDFs, Word documents, images?**
-Not indexed. HTML only in V1.
+Not indexed. HTML only, for now.
 
 **How often should I rebuild?**
 On every deploy of the site, or nightly. Rebuilds are full but cheap: the cache means only changed
@@ -1639,9 +1663,9 @@ It is stateless: no sessions, no server-to-client requests. Run as many instance
 any load balancer.
 
 **How do I authenticate MCP clients?**
-V1 offers a static API key (`Mcp:ApiKey`) sent as a bearer token or `X-Api-Key` header, plus per-IP
-rate limiting for the public mode. OAuth is not built in; put an API gateway
-in front if you need it.
+The server offers a static API key (`Mcp:ApiKey`) sent as a bearer token or `X-Api-Key` header,
+plus per-IP rate limiting for the public mode. OAuth is not built in; put an API gateway in front if
+you need it.
 
 **Can I change what the agent is told about the site?**
 Yes. `Instructions:Preamble` in the indexer config prepends text to the generated outline;
@@ -1669,8 +1693,8 @@ No. Both tools are read-only.
 No, and the rate limit is sized for search on submit.
 
 **Is a chat endpoint included?**
-Not in V1. An OpenAI-compatible chat API (Chat Completions and Responses, streaming) built on
-Microsoft Agent Framework is planned for V2.
+Not yet. An OpenAI-compatible chat API (Chat Completions and Responses, streaming) built on
+Microsoft Agent Framework is planned for a later release.
 
 **Does it need Azure?**
 No. The server is a plain container that runs anywhere. Application Insights is one optional telemetry
@@ -1724,6 +1748,7 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 | Method and path | Purpose | Rate limited | Key |
 |---|---|---|---|
 | `POST {Mcp:Path}` | MCP JSON-RPC (default `/mcp`) | yes | optional |
+| `GET {Mcp:Path}/server-card` | Server card (SEP-2127): name, version, repository and the remote endpoint, as `application/mcp-server-card+json` | yes | no |
 | `GET {SearchApi:Path}?q=&limit=` | Search API (default `/api/search`) | yes | no |
 | `GET /api/info` | Site, index, build statistics and endpoint URLs as JSON | no | no |
 | `GET /openapi/v1.json` | OpenAPI document for the search API and `/api/info` | no | no |
