@@ -179,6 +179,42 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/openapi/v1.json")).StatusCode);
     }
 
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/playground")]
+    [InlineData("/docs/")]
+    [InlineData("/api/info")]
+    [InlineData("/api/search?q=rockets")]
+    [InlineData("/healthz")]
+    [InlineData("/no-such-page")]
+    public async Task EveryResponseDeniesFramingAndSniffing(string path)
+    {
+        var response = await Client.GetAsync(path);
+
+        Assert.Equal("frame-ancestors 'none'", response.Headers.GetValues("Content-Security-Policy").Single());
+        Assert.Equal("DENY", response.Headers.GetValues("X-Frame-Options").Single());
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+        Assert.Equal("strict-origin-when-cross-origin", response.Headers.GetValues("Referrer-Policy").Single());
+    }
+
+    [Fact]
+    public async Task FrameAncestorsCanBeAllowed()
+    {
+        using var factory = fixture.Factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Ui:FrameAncestors:0", "https://example.test");
+            builder.UseSetting("Ui:FrameAncestors:1", "'self'");
+        });
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/playground");
+        Assert.Equal("frame-ancestors https://example.test 'self'", response.Headers.GetValues("Content-Security-Policy").Single());
+
+        // X-Frame-Options cannot carry a list, so only frame-ancestors speaks.
+        Assert.False(response.Headers.Contains("X-Frame-Options"));
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+    }
+
     /// <summary>A new test server loads its index in the background; poll the page until it shows one.</summary>
     private static async Task<string> WaitForIndexAsync(HttpClient client)
     {

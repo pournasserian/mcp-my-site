@@ -18,6 +18,13 @@ All notable changes to this project are recorded here. The format follows
   plain text instead of Markdown source, so the `section` of a search result reads `FluentCMS`
   rather than `[FluentCMS](https://...)` (#52).
 
+### Security
+
+- Every response carries `Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin`, so the
+  pages can no longer be framed by another site. `Ui:FrameAncestors` lists origins that may embed
+  them (#27).
+
 ## [0.2.2] - 2026-10-17
 
 ### Fixed
