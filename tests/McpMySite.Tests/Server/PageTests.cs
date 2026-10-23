@@ -45,20 +45,27 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
     }
 
     [Fact]
-    public async Task PlaygroundPageServesTheBrowserClient()
+    public async Task LandingPageExplainsHowToTestTheServerWithTheInspector()
     {
-        var response = await Client.GetAsync("/playground");
-        response.EnsureSuccessStatusCode();
-        var html = await response.Content.ReadAsStringAsync();
+        var html = await Client.GetStringAsync("/");
 
-        Assert.Contains("<title>Try the Example MCP server</title>", html);
-        Assert.Contains("<link rel=\"canonical\" href=\"http://localhost/playground\"", html);
-        Assert.Contains("data-endpoint=\"/mcp\"", html);
-        Assert.Contains("data-requires-key=\"true\"", html);
-        Assert.Contains("id=\"api-key\"", html);
-        Assert.Contains("'tools/call'", html);
+        Assert.Contains("href=\"#test\"", html);
+        Assert.Contains("<section id=\"test\"", html);
+        Assert.Contains("npx @modelcontextprotocol/inspector</code>", html);
+        Assert.Contains("npx @modelcontextprotocol/inspector --cli http://localhost/mcp --transport http --header &quot;Authorization: Bearer &lt;key&gt;&quot; --method tools/call --tool-name search --tool-arg query=pricing", html);
+        Assert.Contains("under Authentication, add an <code>Authorization</code> header", html);
+        Assert.Contains("https://github.com/modelcontextprotocol/inspector#readme", html);
+    }
 
-        Assert.Contains("href=\"/playground\"", await Client.GetStringAsync("/"));
+    [Fact]
+    public async Task OldPlaygroundLinksAreRedirectedToTheTestSection()
+    {
+        using var client = fixture.Factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        using var response = await client.GetAsync("/playground");
+
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+        Assert.Equal("/#test", response.Headers.Location?.ToString());
     }
 
     [Fact]
@@ -90,7 +97,8 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         var xml = await sitemap.Content.ReadAsStringAsync();
         Assert.StartsWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>", xml);
         Assert.Contains("<loc>http://localhost/</loc>", xml);
-        Assert.Contains("<loc>http://localhost/playground</loc>", xml);
+        Assert.Contains("<loc>http://localhost/docs/</loc>", xml);
+        Assert.DoesNotContain("/playground", xml);
         Assert.Contains("<lastmod>2026-10-10</lastmod>", xml);
     }
 
@@ -181,7 +189,6 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
 
     [Theory]
     [InlineData("/")]
-    [InlineData("/playground")]
     [InlineData("/docs/")]
     [InlineData("/api/info")]
     [InlineData("/api/search?q=rockets")]
@@ -207,7 +214,7 @@ public class PageTests(ServerFixture fixture) : IClassFixture<ServerFixture>
         });
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/playground");
+        var response = await client.GetAsync("/");
         Assert.Equal("frame-ancestors https://example.test 'self'", response.Headers.GetValues("Content-Security-Policy").Single());
 
         // X-Frame-Options cannot carry a list, so only frame-ancestors speaks.

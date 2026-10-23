@@ -376,7 +376,7 @@ for that index, and reports keyword-only on the landing page, in `/healthz` and 
 
 What you give up: matches by meaning. "How do I reach you" will not find a page that only says
 "contact"; BM25 ranks by the words themselves (no stemming, diacritics folded). What you keep:
-everything else, including `fetch`, the playground, the search API and hot swap. Switching later is a
+everything else, including `fetch`, the search API and hot swap. Switching later is a
 config change and a rebuild (section 4.6); the server picks up either kind of index without a restart.
 
 The server has the same switch. `Embeddings:Enabled` set to `false` on the server never embeds
@@ -734,7 +734,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:MaxLimit` | `20` | Upper bound for `limit`. |
 | `SearchApi:MaxOffset` | `100` | Upper bound for `offset`, on the search API and the MCP `search` tool. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
-| `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the MCP playground at `/playground`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
+| `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
 | `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
 | `Ui:StaleAfterDays` | `30` | The landing page and `/api/info` flag the index as stale when it is older than this. `0` turns the flag off. |
 | `Ui:FrameAncestors` | `[]` | Origins allowed to embed the pages in a frame, as CSP `frame-ancestors` sources (`https://www.example.com`, `'self'`). Empty denies framing everywhere. Section 12. |
@@ -947,7 +947,7 @@ client address for rate limiting and telemetry, nothing more.
 `lastError` holds the most recent load or refresh failure even while an older index is still being
 served, which makes it the first place to look when a new index did not appear.
 
-Every page and JSON endpoint (`/`, `/playground`, `/llms.txt`, `/robots.txt`, `/sitemap.xml`,
+Every page and JSON endpoint (`/`, `/llms.txt`, `/robots.txt`, `/sitemap.xml`,
 `/api/info`, `/api/search`, `/healthz`, the OpenAPI document and `/docs`) answers `HEAD` with the
 same status and headers as `GET` and no body, so uptime monitors, link checkers and link previews
 that send `HEAD` first see the server as up.
@@ -966,6 +966,7 @@ With `Ui:Enabled` on, `GET /` is a page for people who open the server's URL:
 - how to connect: the MCP URL with a copy button and ready-made setup for Claude Code, Claude.ai and
   Claude Desktop, ChatGPT, VS Code, Cursor and stdio-only clients. When `Mcp:ApiKey` is set it says a
   key is needed (never the key) and leaves out the clients that cannot send one;
+- how to test the server with the MCP Inspector, in the page and from the command line (section 7.9);
 - what is indexed: pages, approximate words, sections with their page counts, build date, newest page
   and languages;
 - the last build: source, duration, pages fetched and skipped, errors, embeddings generated and cached,
@@ -976,7 +977,7 @@ With `Ui:Enabled` on, `GET /` is a page for people who open the server's URL:
 The page is rendered on the server, so search engines and link previews see all of it; script only
 powers the copy buttons. It carries a description, a canonical link, Open Graph tags and schema.org
 `WebAPI` data. `robots.txt` keeps crawlers out of the MCP endpoint and `/api/`, and points them at
-`sitemap.xml`, which lists `/`, `/playground` and `/docs/` with the index build date. Until an index is loaded the
+`sitemap.xml`, which lists `/` and `/docs/` with the index build date. Until an index is loaded the
 page answers `503` and asks not to be indexed. With `Ui:Enabled` off, `/` is a short text summary and
 `robots.txt` disallows everything.
 
@@ -989,19 +990,18 @@ can also publish a copy at your site's own `/llms.txt`.
 Indexes from indexers older than this feature have no build statistics; the page then shows the
 manifest's page and chunk counts and build date only. Rebuild to get the rest.
 
-### 7.9 The MCP playground
+### 7.9 Testing the server
 
-`GET /playground` is a small MCP client in the page, so anyone can try the server without installing
-one. It connects to this server's MCP endpoint (on load, or after an API key is entered when
-`Mcp:ApiKey` is set), shows the server name, protocol version, capabilities and the instructions it
-gives to models, then builds a form for every tool from its input schema. Search results come back as
-a list with a "Fetch this page" button, fetched pages as their Markdown, and every JSON-RPC request
-and response is logged with its timing.
+The landing page's "Test the server" section (`/#test`) points at the
+[MCP Inspector](https://github.com/modelcontextprotocol/inspector#readme), the official client for
+trying a server by hand, with this server's URL filled in and, when `Mcp:ApiKey` is set, the
+`Authorization: Bearer <key>` header to add under Authentication. It also gives the Inspector's CLI
+form for a scripted check. Section 8 has the same commands.
 
-The requests are the real thing: same endpoint, same rate limit, same API key check as any MCP client.
-The key stays in the page and is not stored. The playground always calls the endpoint on its own
-origin, so it needs no CORS settings. It needs JavaScript; the server home page covers clients for
-anyone without it.
+The Inspector runs on your machine and talks to the endpoint from there, so it works unchanged with
+`Mcp:ApiKey` and without any CORS setting. Earlier releases served a browser playground at
+`/playground`; that path now redirects to `/#test` so existing links keep working, and the redirect
+goes away in a later release.
 
 ### 7.10 Logging and telemetry
 
@@ -1220,14 +1220,20 @@ claude mcp add --transport http mysite https://example.com/mcp --header "Authori
 These clients cannot send a static header, so leave `Mcp:ApiKey` unset for them and rely on the rate
 limit; this is the public mode the spec describes.
 
-**In the browser.** The server's own `/playground` page (section 7.9) lists the tools and calls them,
-which covers most quick checks. For deeper debugging use the **MCP Inspector**:
+**MCP Inspector**, the official client for trying a server by hand; the landing page's "Test the
+server" section shows the same with this server's URL filled in:
 
 ```bash
 npx @modelcontextprotocol/inspector
 ```
 
-Choose the Streamable HTTP transport, enter the URL, connect, and call `search` and `fetch` by hand.
+Choose the Streamable HTTP transport, enter the URL and, when `Mcp:ApiKey` is set, add an
+`Authorization` header with `Bearer <key>` under Authentication. Connect, then call `search` and
+`fetch` by hand. The CLI form makes one call and prints the result, for a script or a health check:
+
+```bash
+npx @modelcontextprotocol/inspector --cli https://example.com/mcp --transport http --method tools/call --tool-name search --tool-arg query=pricing
+```
 
 **curl**, to see the raw protocol:
 
@@ -1450,8 +1456,8 @@ cost is the hosting plan.
   once, and lets you add a delay. Index only sites you own or are allowed to index.
 - **Response headers.** Every response carries `Content-Security-Policy: frame-ancestors 'none'`
   with `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and
-  `Referrer-Policy: strict-origin-when-cross-origin`, so no other site can show the playground or the
-  landing page in an iframe and lure a visitor into clicking. `Ui:FrameAncestors` lists the origins
+  `Referrer-Policy: strict-origin-when-cross-origin`, so no other site can show the landing page in an
+  iframe and lure a visitor into clicking. `Ui:FrameAncestors` lists the origins
   that may embed the pages; `X-Frame-Options` is then left out, since it cannot carry a list. MCP
   clients and the search API's callers ignore these headers.
 - **Forwarded headers.** See section 7.6. The one setting that can weaken the rate limit is trusting
@@ -1745,7 +1751,7 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 | `GET /docs` | Interactive API reference, when `Ui:Enabled` | no | no |
 | `GET /healthz` | Health and index status | no | no |
 | `GET /` | Landing page, when `Ui:Enabled`; otherwise a one-line text description | no | no |
-| `GET /playground` | MCP playground, when `Ui:Enabled` | no | no |
+| `GET /playground` | Redirect to `/#test`, when `Ui:Enabled`; kept for old links and removed in a later release | no | no |
 | `GET /llms.txt` | The indexed pages as a Markdown list for language models, when `Ui:Enabled` | no | no |
 | `GET /robots.txt` | Crawler rules | no | no |
 | `GET /sitemap.xml` | Pages for search engines, when `Ui:Enabled` | no | no |

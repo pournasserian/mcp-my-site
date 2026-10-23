@@ -338,7 +338,7 @@ flowchart TB
     Key --> SAPI["GET /api/search<br/>minimal API"]
     FH --> H["GET /healthz, GET /"]
     FH --> Docs["GET /openapi/v1.json<br/>GET /docs (Scalar)"]
-    FH --> Pages["GET /, /playground, /llms.txt, robots.txt, sitemap.xml<br/>Razor components, server-rendered"]
+    FH --> Pages["GET /, /llms.txt, robots.txt, sitemap.xml<br/>Razor components, server-rendered"]
     FH --> Info["GET /api/info"]
     Pages --> SI["SiteInfo<br/>site, index, stats, endpoint URLs"]
     Info --> SI
@@ -368,7 +368,6 @@ flowchart TB
 | `OpenApiSetup` | The OpenAPI document (titled after the loaded site, MCP excluded) and the Scalar reference page. |
 | `SiteInfo`, `InfoEndpoints` | One model of the site, the loaded index, its build stats and the endpoint URLs, served as `/api/info` and rendered by the landing page. |
 | `LlmsTxt` | Builds `/llms.txt` from every page of the loaded store, grouped by the manifest's sections, and caches it per index build and base URL. |
-| `PlaygroundPage` | The MCP playground: a server-rendered page whose inline script is a minimal Streamable HTTP client (initialize, tools/list, tools/call), with forms generated from input schemas. It writes server data with `textContent` only. |
 | `PageEndpoints`, `LandingPage`, `PageShell` | The landing page as a Razor component rendered on the server through `RazorComponentResult`, plus `robots.txt` and `sitemap.xml`. `PageShell` holds the document head (description, canonical, Open Graph, schema.org) and the inlined styles. |
 | `CloudflareClientIpMiddleware` | Behind Cloudflare, replaces the connection's remote address with `CF-Connecting-IP` when the caller is inside `Cloudflare:TrustedNetworks`, and tags the request's Activity with `cloudflare.ray_id`, `cloudflare.country` and `client.address`. A pass-through otherwise. |
 | `ResponseHeadersMiddleware` | Sets `Content-Security-Policy: frame-ancestors`, `X-Frame-Options`, `X-Content-Type-Options` and `Referrer-Policy` on every response, before the limiter and the endpoints run, so their answers carry them too. `Ui:FrameAncestors` turns the deny-all policy into an origin list. |
@@ -630,7 +629,7 @@ src/
     Telemetry/                     ServerDiagnostics, TelemetrySetup
     Requests/                      CloudflareClientIpMiddleware, BodyLoggingMiddleware, SecretRedactor,
                                    ResponseHeadersMiddleware, HeadSupport
-    Pages/                         PageEndpoints, LandingPage, PlaygroundPage, PageShell (Razor),
+    Pages/                         PageEndpoints, LandingPage, PageShell (Razor),
                                    PageAssets (inlined styles and scripts), LlmsTxt
     Mcp/                           SiteTools
     Api/                           SearchEndpoints, InfoEndpoints (SiteInfo, /api/info), OpenApiSetup

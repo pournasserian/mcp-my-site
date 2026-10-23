@@ -13,7 +13,6 @@ public class MethodTests(ServerFixture fixture) : IClassFixture<ServerFixture>
 
     [Theory]
     [InlineData("/")]
-    [InlineData("/playground")]
     [InlineData("/llms.txt")]
     [InlineData("/robots.txt")]
     [InlineData("/sitemap.xml")]

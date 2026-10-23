@@ -17,7 +17,6 @@ A live instance indexes [pournasserian.com](https://pournasserian.com):
 | | |
 |---|---|
 | MCP endpoint | `https://ai.pournasserian.com/mcp` |
-| Playground, an MCP client in the browser | <https://ai.pournasserian.com/playground> |
 | Search API | <https://ai.pournasserian.com/api/search?q=mcp%20caching> |
 | API reference | <https://ai.pournasserian.com/docs> |
 
@@ -27,8 +26,6 @@ claude mcp add --transport http pournasserian https://ai.pournasserian.com/mcp
 
 Then ask Claude Code something about the site. For ChatGPT, add the endpoint as a connector; the
 tools follow the `search` and `fetch` contract its connectors expect.
-
-![The playground page calling the search tool: a query about designing an MCP tool returns three pages of pournasserian.com with snippets and a Fetch button each](docs/images/playground.png)
 
 ## Quick start
 
@@ -48,8 +45,9 @@ Without Docker, clone the repository and run the server from source with
 ([user guide](docs/user-guide.md#3-installation)). The indexer also runs from a clone as
 `dotnet run --project src/McpMySite.Indexer -- ...`, which is how to try unreleased changes.
 
-The server is now at `http://localhost:5000`: `/mcp` for agents, `/playground` to try it in the
-browser, `/api/search?q=contact` for JSON, `/healthz` for the loaded index.
+The server is now at `http://localhost:5000`: `/mcp` for agents, `/api/search?q=contact` for JSON,
+`/healthz` for the loaded index. The landing page at `/` shows how to connect each client and how to
+test the server with the MCP Inspector.
 
 ```bash
 claude mcp add --transport http mysite http://localhost:5000/mcp
@@ -85,8 +83,6 @@ Cursor, Claude Desktop) are in the [user guide](docs/user-guide.md#4-quick-start
 - **Search API for your own site.** `GET /api/search` with CORS, rate limiting, offset paging, an
   OpenAPI 3.1 document and an interactive reference. Drop-in snippet for a search box in the
   [user guide](docs/user-guide.md#9-adding-a-search-box-to-your-site).
-- **Playground.** `/playground` is a small MCP client in the page, so anyone can try the server
-  without installing anything.
 - **Docker image.** `docker pull ghcr.io/pournasserian/mcp-my-site:latest`; mount the index or
   point it at a URL.
 - **Hot swap.** The server polls the index source and swaps in a new build without a restart.

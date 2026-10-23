@@ -1,8 +1,7 @@
 namespace McpMySite.Server.Requests;
 
-// Baseline protections on every response. The pages render an API key field and buttons that call the tools, so a
-// hostile site must not be able to show them in an iframe; nosniff and a referrer policy cost nothing and close
-// the standard findings. Set before the endpoint runs so the rate limiter's 429 and the transport's answers carry
+// Baseline protections on every response. The pages show a visitor how to connect, so a hostile site must not be
+// able to show them in an iframe; nosniff and a referrer policy cost nothing and close the standard findings. Set before the endpoint runs so the rate limiter's 429 and the transport's answers carry
 // them too; an endpoint can still overwrite one. MCP clients ignore all of them.
 public sealed class ResponseHeadersMiddleware
 {
