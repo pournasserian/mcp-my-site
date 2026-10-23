@@ -28,6 +28,13 @@ All notable changes to this project are recorded here. The format follows
   replaced daily and never stored, so a dashboard can count distinct visitors without the server
   keeping addresses (#45).
 
+### Removed
+
+- The browser playground at `/playground`. The landing page's new "Test the server" section points
+  at the MCP Inspector instead, with the server's URL and header filled in and a CLI line for a
+  scripted check. `/playground` redirects to that section for now; the redirect goes away in a later
+  release (#61).
+
 ### Changed
 
 - The architecture document describes `ResponseHeadersMiddleware` and `HeadSupport`, the response
