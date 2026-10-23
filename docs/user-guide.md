@@ -782,7 +782,10 @@ URL, and the server picks it up within the poll interval.
 - A person who opens the endpoint's URL in a browser is redirected to the landing page: any `GET` or
   `HEAD` on `Mcp:Path` without `text/event-stream` in `Accept` goes to `/` while `Ui:Enabled` is on.
   With the pages off, the transport answers `405` as the specification says.
-- Capabilities: tools only. No resources, no prompts.
+- Capabilities: tools only. No resources, no prompts. The `initialize` answer also lists `logging`:
+  the MCP SDK answers `logging/setLevel` itself and lists the capability on every server, with no way
+  to turn it off; this server never sends `notifications/message`. The `2026-07-28` revision retires
+  logging, and the `server/discover` answer for that revision carries tools only.
 - `initialize` returns the server name and version and the instructions described in section 6.8.
 - `tools/list` describes `search` with the loaded site's name, URL, description and page count, so a
   model knows which site the server covers even when its client ignores the instructions.

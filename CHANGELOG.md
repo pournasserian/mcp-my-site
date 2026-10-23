@@ -17,6 +17,9 @@ All notable changes to this project are recorded here. The format follows
 - A heading that is a link, or carries inline code or emphasis, enters a chunk's heading path as
   plain text instead of Markdown source, so the `section` of a search result reads `FluentCMS`
   rather than `[FluentCMS](https://...)` (#52).
+- `server/discover` on the `2026-07-28` revision no longer advertises the `logging` capability that
+  revision retires (MCP SDK 2.3.0). `initialize` still lists it, because the SDK answers
+  `logging/setLevel` on every server; the user guide now says so (#55).
 
 ### Security
 
