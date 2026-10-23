@@ -51,6 +51,7 @@ services.AddMcpServer(options =>
         };
     })
     .WithTools<SiteTools>()
+    .WithMessageFilters(filters => filters.AddIncomingFilter(McpClientTags.Filter))
     .WithRequestFilters(filters => filters.AddListToolsFilter(next => async (context, cancellationToken) =>
         SiteTools.DescribeSite(await next(context, cancellationToken), context.Services?.GetService<IndexHolder>()?.Current?.Manifest)));
 

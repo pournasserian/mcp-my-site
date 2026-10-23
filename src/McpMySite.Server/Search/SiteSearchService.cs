@@ -26,6 +26,8 @@ public sealed class SiteSearchService : IDisposable
     public async Task<SearchResponse> SearchAsync(string query, int limit, int offset, string channel, CancellationToken cancellationToken)
     {
         using var activity = ServerDiagnostics.ActivitySource.StartActivity("mcpmysite.search");
+        var client = McpClientTags.Current;
+        client?.Apply(activity);
         activity?.SetTag("mcpmysite.channel", channel);
         activity?.SetTag("mcpmysite.limit", limit);
         activity?.SetTag("mcpmysite.offset", offset);
@@ -72,6 +74,7 @@ public sealed class SiteSearchService : IDisposable
         var elapsed = stopwatch.Elapsed.TotalMilliseconds;
 
         var tags = new TagList { { "channel", channel }, { "fallback", fallback } };
+        client?.Apply(ref tags);
         ServerDiagnostics.SearchRequests.Add(1, tags);
         ServerDiagnostics.SearchDuration.Record(elapsed, tags);
         activity?.SetTag("mcpmysite.fallback", fallback);
@@ -92,6 +95,8 @@ public sealed class SiteSearchService : IDisposable
     public async Task<PageDocument?> FetchAsync(string url, string channel, CancellationToken cancellationToken)
     {
         using var activity = ServerDiagnostics.ActivitySource.StartActivity("mcpmysite.fetch");
+        var client = McpClientTags.Current;
+        client?.Apply(activity);
         activity?.SetTag("mcpmysite.channel", channel);
 
         var store = RequireIndex(activity, "Fetch", channel);
@@ -100,6 +105,7 @@ public sealed class SiteSearchService : IDisposable
         var elapsed = stopwatch.Elapsed.TotalMilliseconds;
 
         var tags = new TagList { { "channel", channel }, { "found", page is not null } };
+        client?.Apply(ref tags);
         ServerDiagnostics.FetchRequests.Add(1, tags);
         ServerDiagnostics.FetchDuration.Record(elapsed, tags);
         activity?.SetTag("mcpmysite.found", page is not null);

@@ -19,6 +19,10 @@ All notable changes to this project are recorded here. The format follows
 - `Telemetry:Metrics` names the metric groups the server exports (`Server`, `AspNetCore`,
   `HttpClient`, `Runtime`; default all), so a deployment can drop the HTTP client and runtime series
   that make up most of what a workspace ingests. The startup line names the groups in use (#46).
+- The MCP SDK's spans and the server's `mcpmysite.search` and `mcpmysite.fetch` spans and counters
+  carry `mcp.client.name`, `mcp.client.version` and `mcp.protocol.version` from the client's
+  `clientInfo`; on the stateless transport the client is known on `initialize` and, from the
+  `2026-07-28` revision, on every request (#44).
 
 ### Changed
 

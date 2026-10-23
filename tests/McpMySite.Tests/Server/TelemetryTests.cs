@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Http.Json;
@@ -444,5 +445,126 @@ public class ServerTelemetryUnitTests
         Assert.DoesNotContain(logs.Entries, e => e.Message.Contains("TOPSECRETSIGNATURE", StringComparison.Ordinal));
 
         await app.StopAsync();
+    }
+}
+
+public class McpClientTagTests
+{
+    [Fact]
+    public async Task ClientNamedInRequestMetaTagsTheServersSpansAndCounters()
+    {
+        var activities = new List<Activity>();
+        var measurements = new List<KeyValuePair<string, object?>[]>();
+        using var tracing = Listen(activities);
+        using var metrics = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter == ServerDiagnostics.Meter && instrument.Name == "mcpmysite.search.requests")
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        metrics.SetMeasurementEventCallback<long>((_, _, tags, _) => { lock (measurements) { measurements.Add(tags.ToArray()); } });
+        metrics.Start();
+
+        var (factory, client) = await LoggedServer.StartAsync(new CapturedLogs(), []);
+        using (factory)
+        using (client)
+        {
+            var response = await McpAsync(client, new
+            {
+                jsonrpc = "2.0",
+                id = 1,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "search",
+                    arguments = new { query = "widgets" },
+                    _meta = new Dictionary<string, object>
+                    {
+                        ["io.modelcontextprotocol/protocolVersion"] = "2026-07-28",
+                        ["io.modelcontextprotocol/clientCapabilities"] = new { },
+                        ["io.modelcontextprotocol/clientInfo"] = new { name = "meta-test-client", version = "4.2" },
+                    },
+                },
+            }, "2026-07-28", "tools/call", "search");
+            Assert.True(response.IsSuccessStatusCode, response.StatusCode + ": " + await response.Content.ReadAsStringAsync());
+        }
+
+        var search = Assert.Single(activities, a => a.OperationName == "mcpmysite.search" && a.GetTagItem("mcp.client.name") as string == "meta-test-client");
+        Assert.Equal("4.2", search.GetTagItem("mcp.client.version"));
+        Assert.Equal("2026-07-28", search.GetTagItem("mcp.protocol.version"));
+
+        var sdk = Assert.Single(activities, a => a.Source.Name == ServerDiagnostics.McpSdkName && a.GetTagItem("mcp.client.name") as string == "meta-test-client");
+        Assert.StartsWith("tools/call", sdk.OperationName);
+
+        var counted = Assert.Single(measurements, m => m.Any(t => t.Key == "mcp.client.name" && t.Value as string == "meta-test-client"));
+        Assert.Contains(counted, t => t.Key == "mcp.client.version" && t.Value as string == "4.2");
+        Assert.Contains(counted, t => t.Key == "channel" && t.Value as string == "mcp");
+    }
+
+    [Fact]
+    public async Task InitializeSpanCarriesTheClientItIntroduced()
+    {
+        var activities = new List<Activity>();
+        using var tracing = Listen(activities);
+
+        var (factory, client) = await LoggedServer.StartAsync(new CapturedLogs(), []);
+        using (factory)
+        using (client)
+        {
+            var response = await McpAsync(client, new
+            {
+                jsonrpc = "2.0",
+                id = 1,
+                method = "initialize",
+                @params = new { protocolVersion = "2025-11-25", capabilities = new { }, clientInfo = new { name = "init-test-client", version = "0.1" } },
+            });
+            response.EnsureSuccessStatusCode();
+        }
+
+        var init = Assert.Single(activities, a => a.GetTagItem("mcp.client.name") as string == "init-test-client");
+        Assert.Equal(ServerDiagnostics.McpSdkName, init.Source.Name);
+        Assert.StartsWith("initialize", init.OperationName);
+        Assert.Equal("0.1", init.GetTagItem("mcp.client.version"));
+        Assert.Equal("2025-11-25", init.GetTagItem("mcp.protocol.version"));
+    }
+
+    private static ActivityListener Listen(List<Activity> activities)
+    {
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name is ServerDiagnostics.Name or ServerDiagnostics.McpSdkName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity => { lock (activities) { activities.Add(activity); } },
+        };
+        ActivitySource.AddActivityListener(listener);
+        return listener;
+    }
+
+    // The 2026-07-28 transport wants the method, and for tools/call the tool, repeated in headers.
+    private static async Task<HttpResponseMessage> McpAsync(HttpClient client, object request, string? protocolVersion = null, string? mcpMethod = null, string? mcpName = null)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent.Create(request) };
+        message.Headers.Accept.ParseAdd("application/json");
+        message.Headers.Accept.ParseAdd("text/event-stream");
+        if (protocolVersion is not null)
+        {
+            message.Headers.Add("MCP-Protocol-Version", protocolVersion);
+        }
+
+        if (mcpMethod is not null)
+        {
+            message.Headers.Add("Mcp-Method", mcpMethod);
+        }
+
+        if (mcpName is not null)
+        {
+            message.Headers.Add("Mcp-Name", mcpName);
+        }
+
+        return await client.SendAsync(message);
     }
 }

@@ -1086,12 +1086,12 @@ Besides incoming requests, outgoing HTTP calls and .NET runtime metrics, the ser
 
 | Signal | Name | Tags |
 |---|---|---|
-| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.offset`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`) |
-| Span | `mcpmysite.fetch` | `mcpmysite.channel`, `mcpmysite.found`, `mcpmysite.url` (pages found; misses only with `Telemetry:LogQueryText`) |
+| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.offset`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`), and the MCP client tags below |
+| Span | `mcpmysite.fetch` | `mcpmysite.channel`, `mcpmysite.found`, `mcpmysite.url` (pages found; misses only with `Telemetry:LogQueryText`), and the MCP client tags below |
 | Span | `mcpmysite.index.load` | `mcpmysite.index.source` (`path` or `url`), `mcpmysite.index.outcome` |
-| Counter | `mcpmysite.search.requests` | `channel` (`mcp` or `api`), `fallback` (`true` when keyword-only) |
+| Counter | `mcpmysite.search.requests` | `channel` (`mcp` or `api`), `fallback` (`true` when keyword-only), and the MCP client tags below |
 | Histogram | `mcpmysite.search.duration` (ms) | same |
-| Counter | `mcpmysite.fetch.requests` | `channel`, `found` |
+| Counter | `mcpmysite.fetch.requests` | `channel`, `found`, and the MCP client tags below |
 | Histogram | `mcpmysite.fetch.duration` (ms) | same |
 | Counter | `mcpmysite.index.loads` | `outcome`: `loaded`, `unchanged`, `failed` or `cancelled` |
 | Histogram | `mcpmysite.index.load.duration` (ms) | same |
@@ -1121,6 +1121,16 @@ the forwarded address headers.
 It also collects the MCP SDK's spans and metrics (one span per JSON-RPC call, such as
 `tools/call search`, with the tool name) and the embedding calls, which follow the OpenTelemetry GenAI
 conventions: model, duration and token usage, never the text.
+
+**MCP client tags.** The SDK's span for every JSON-RPC call, and the server's `mcpmysite.search` and
+`mcpmysite.fetch` spans and counters, carry `mcp.client.name` and `mcp.client.version` from the
+client's `clientInfo` (for example `claude-ai` or `cursor`) and `mcp.protocol.version`, the revision
+negotiated for the call. The server runs in stateless mode, so on the `2025-11-25` revision and
+earlier the client is only known on the `initialize` call itself, which is enough to chart which
+assistants connect and which fail there; `tools/call` requests carry the protocol version from their
+header and no client name. On the `2026-07-28` revision every request names the client in its
+`_meta`, so every span and counter is tagged. The SDK's own `mcp.server.*` metrics have no hook for
+extra tags and stay as they are.
 
 The indexer reports as service `mcpmysite-indexer`:
 
