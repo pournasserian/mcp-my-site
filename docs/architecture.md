@@ -363,6 +363,7 @@ flowchart TB
 | `IndexRefreshService` | Loads once at startup and then on a timer. |
 | `SiteSearchService` | The single search path: embed query (with fallback), call the store, emit metrics and spans. Caches the embedding generator per (model, dimensions). |
 | `SiteTools` | The two MCP tools. Thin: validate arguments, call the service, shape the result, turn "no index" into a tool error. |
+| `ServerCard` | The SEP-2127 server card at `{Mcp:Path}/server-card`: registry name, version, repository and the one remote endpoint with its protocol versions and, when a key is required, the header to send. Serialized per request, with an `ETag` and `Cache-Control`, open to every origin, and exempt from the API key check. |
 | `SearchEndpoints` | The HTTP search endpoint with its validation, status codes and OpenAPI metadata. |
 | `OpenApiSetup` | The OpenAPI document (titled after the loaded site, MCP excluded) and the Scalar reference page. |
 | `SiteInfo`, `InfoEndpoints` | One model of the site, the loaded index, its build stats and the endpoint URLs, served as `/api/info` and rendered by the landing page. |

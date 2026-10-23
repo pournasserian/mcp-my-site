@@ -18,6 +18,7 @@ public class MethodTests(ServerFixture fixture) : IClassFixture<ServerFixture>
     [InlineData("/robots.txt")]
     [InlineData("/sitemap.xml")]
     [InlineData("/api/info")]
+    [InlineData("/mcp/server-card")]
     [InlineData("/api/search?q=rockets")]
     [InlineData("/healthz")]
     [InlineData("/openapi/v1.json")]
