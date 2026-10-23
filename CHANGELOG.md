@@ -6,6 +6,12 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A heading that is a link, or carries inline code or emphasis, enters a chunk's heading path as
+  plain text instead of Markdown source, so the `section` of a search result reads `FluentCMS`
+  rather than `[FluentCMS](https://...)` (#52).
+
 ## [0.2.2] - 2026-10-17
 
 ### Fixed

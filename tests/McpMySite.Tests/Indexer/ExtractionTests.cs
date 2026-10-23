@@ -129,6 +129,30 @@ public class MarkdownChunkerTests
     }
 
     [Fact]
+    public void HeadingPathHoldsPlainTextNotMarkdown()
+    {
+        var chunker = new MarkdownChunker(maxChars: 1000, minChars: 1);
+        var chunks = chunker.Chunk("# Open Source\n\nIntro.\n\n## [FluentCMS](https://example.test/open-source/fluentcms)\n\nA CMS.\n\n## The `search` tool and **more**\n\nMore.\n\n## ![logo](a.png) _Italic_ [ref][1]\n\nRef.");
+
+        Assert.Equal(4, chunks.Count);
+        Assert.Equal(["Open Source", "FluentCMS"], chunks[1].HeadingPath);
+        Assert.Equal(["Open Source", "The search tool and more"], chunks[2].HeadingPath);
+        Assert.Equal(["Open Source", "logo Italic ref"], chunks[3].HeadingPath);
+
+        // The chunk text keeps the source, so the link target is still searchable.
+        Assert.StartsWith("## [FluentCMS](https://example.test/open-source/fluentcms)", chunks[1].Text);
+    }
+
+    [Theory]
+    [InlineData("snake_case_name", "snake_case_name")]
+    [InlineData("2 * 3 * 4", "2 * 3 * 4")]
+    [InlineData("Plain heading", "Plain heading")]
+    public void PlainTextLeavesOrdinaryHeadingsAlone(string heading, string expected)
+    {
+        Assert.Equal(expected, MarkdownChunker.PlainText(heading));
+    }
+
+    [Fact]
     public void SplitsLongSectionsAtParagraphBoundaries()
     {
         var paragraph = string.Join(" ", Enumerable.Repeat("word", 40));
