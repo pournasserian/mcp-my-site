@@ -476,6 +476,8 @@ which is why their shipped defaults are empty.
 | `Crawl:DelayMilliseconds` | int | `0` | Pause before each request. Use with a low concurrency for fragile hosts. |
 | `Crawl:TimeoutSeconds` | int | `30` | Per request. Minimum 5. |
 | `Crawl:UserAgent` | string | `McpMySiteIndexer/0.2 (+https://github.com/pournasserian/mcp-my-site)` | Sent with every request. The robots.txt group `User-agent: McpMySiteIndexer` targets this crawler. |
+| `Crawl:SkipUnchanged` | bool | `true` | Replay pages the previous build stored instead of downloading them when the sitemap `lastmod` is unchanged or the server answers `304 Not Modified`. `false` downloads every page this run. Needs `Cache:Enabled`. |
+| `Crawl:FullRefreshDays` | int | `7` | Pages last downloaded more than this many days ago are fetched unconditionally, so a change without a `lastmod` bump still gets picked up. `0` never forces a fetch. |
 | `Chunking:MaxChars` | int | `1500` | Upper bound for a chunk. Roughly 350 tokens. |
 | `Chunking:MinChars` | int | `200` | Chunks shorter than this are merged with a neighbour. |
 | `Embeddings:Enabled` | bool | `true` | `false` builds a keyword-only index: no vectors, no provider, no key. The other `Embeddings` settings are then ignored. Section 5.5. |
@@ -485,8 +487,8 @@ which is why their shipped defaults are empty.
 | `Embeddings:ApiKeyEnvironmentVariable` | string | `AI_API_KEY` | Environment variable that holds the key. |
 | `Embeddings:ApiKey` | string | | Direct key value. Takes precedence when set. Avoid outside local experiments. |
 | `Embeddings:BatchSize` | int | `64` | Chunks per embeddings request. |
-| `Cache:Enabled` | bool | `true` | Cache embeddings so unchanged chunks are not re-embedded. |
-| `Cache:Path` | string | `.mcpmysite/embedding-cache.sqlite` | Cache file, relative to the config file. Safe to delete at any time. |
+| `Cache:Enabled` | bool | `true` | Cache embeddings so unchanged chunks are not re-embedded, and keep the page store that lets unchanged pages skip the download. |
+| `Cache:Path` | string | `.mcpmysite/embedding-cache.sqlite` | Cache file, relative to the config file. The page store, `page-store.sqlite`, sits in the same folder. Both are safe to delete at any time. |
 | `Output:Directory` | string | `index` | Where the index is written, relative to the config file. |
 | `Output:Store` | `json` or `sqlite` | `json` | Index store (section 6.6). |
 | `Safety:MinPages` | int | `1` | Fail when fewer pages were indexed. |
@@ -523,15 +525,29 @@ pattern that does not end in `*` also matches everything below it.
 3. If the sitemap produced no URLs, or `Crawl:AlwaysFollowLinks` is on, the crawler starts at `Site:Url` and
    follows `<a href>` links. Only links on the same host (with or without `www.`), without a query
    string and without a non-HTML extension (`.pdf`, `.png`, `.css`, `.js`, `.xml`, ...) are followed.
-4. Each URL is checked against `Crawl:Include`/`Crawl:Exclude` and robots rules, then fetched with
-   `Accept: text/html`. Responses that are not HTML, `404`/`410`, or carry `X-Robots-Tag: noindex`
-   are skipped silently. Other failures count as errors; `5xx` and timeouts are retried once.
-   Pages over 5 MB are rejected.
+4. Each URL is checked against `Crawl:Include`/`Crawl:Exclude` and robots rules. If the previous
+   build stored the page and the sitemap lists the same `<lastmod>` as before, the page is replayed
+   from the store without a request. Otherwise it is fetched with `Accept: text/html`, plus
+   `If-None-Match` and `If-Modified-Since` when the previous response carried an `ETag` or
+   `Last-Modified`; a `304 Not Modified` replays the stored page too. Responses that are not HTML,
+   `404`/`410`, or carry `X-Robots-Tag: noindex` are skipped silently. Other failures count as
+   errors; `5xx` and timeouts are retried once. Pages over 5 MB are rejected.
 5. After redirects, the final URL is used. If the page declares a same-host
    `<link rel="canonical">`, that URL becomes the page URL. A second page resolving to the same URL is
    dropped as a duplicate. Pages with `<meta name="robots" content="noindex">` are dropped.
 
-Fragments are removed from all URLs. `Crawl:MaxPages` counts accepted pages.
+Fragments are removed from all URLs. `Crawl:MaxPages` counts accepted pages, replayed ones included.
+
+The page store is `page-store.sqlite` next to the embedding cache. It holds, per URL, the validators,
+the sitemap `lastmod`, the extracted Markdown and metadata, and the links found in the page, so a
+replayed page is chunked and indexed exactly like a downloaded one and still feeds link following.
+Pages dropped as `noindex`, duplicate or empty are stored as well, so they are not downloaded only to
+be dropped again. Pages last downloaded more than `Crawl:FullRefreshDays` ago are fetched
+unconditionally, which catches content that changed without a `lastmod` bump on a server that
+answers `304` regardless. `Crawl:SkipUnchanged: false` downloads everything for one run, and deleting
+the file has the same effect. The store is only ever a shortcut: a wrong "unchanged" guess is
+impossible as long as the server honours its own validators, and a wrong "changed" guess costs one
+download. The folder source does not use it.
 
 #### Folder
 
@@ -640,7 +656,8 @@ without vectors.
 |---|---|
 | `startedAt`, `finishedAt`, `succeeded`, `failureReason` | Run outcome |
 | `Site:Url`, `store` | What was built |
-| `pagesFetched`, `pagesIndexed` | Pages read, pages kept |
+| `pagesFetched`, `pagesIndexed` | Pages read (downloaded or replayed from the page store), pages kept |
+| `pagesNotModified`, `pagesSkippedByLastmod` | Pages replayed from the page store: the server answered `304`, or the sitemap `lastmod` was unchanged (section 6.3) |
 | `pagesSkippedNoIndex`, `pagesSkippedDuplicate`, `pagesSkippedEmpty` | Why pages were dropped |
 | `chunks`, `embeddingsGenerated`, `embeddingsFromCache` | Chunk count and how many embeddings the provider had to compute |
 | `previousPageCount` | Page count of the index that was in the output folder before |
@@ -1382,7 +1399,8 @@ by polling its manifest.
 
 Build the index where the site is built, with the key as a secret, and publish the output folder. The
 example keeps the indexer configuration in `mcp/appsettings.json`, so the cache and the index land in
-`mcp/`. Cache `mcp/.mcpmysite/` between runs so unchanged chunks are not re-embedded.
+`mcp/`. Cache `mcp/.mcpmysite/` between runs so unchanged pages are not downloaded again and unchanged
+chunks are not re-embedded.
 
 ```yaml
 name: Build site index
@@ -1638,12 +1656,16 @@ build can prerender pages to static HTML, index that folder with `Source:Type` s
 Not indexed. HTML only, for now.
 
 **How often should I rebuild?**
-On every deploy of the site, or nightly. Rebuilds are full but cheap: the cache means only changed
-chunks are embedded, and a 50-page site rebuilds in seconds.
+On every deploy of the site, or nightly. Rebuilds are full but cheap: pages whose sitemap `lastmod`
+is unchanged, or that the server answers `304` for, are replayed from the page store without a
+download (section 6.3), and the embedding cache means only changed chunks are embedded. A 50-page
+site rebuilds in seconds. Keep `.mcpmysite/` between runs to get both.
 
 **Is there incremental indexing?**
-No; every run is a full rebuild, which is what makes deleted pages disappear reliably. The embedding
-cache gives most of the benefit of incremental runs without the bookkeeping.
+No; every run is a full rebuild, which is what makes deleted pages disappear reliably. The page store
+and the embedding cache give most of the benefit of incremental runs without the bookkeeping: an
+unchanged site costs the sitemap, one conditional request per page without a `lastmod`, and no
+embeddings.
 
 **How big a site can it handle?**
 It is aimed at sites under 1,000 pages. The JSON store is best under a few hundred pages; use SQLite

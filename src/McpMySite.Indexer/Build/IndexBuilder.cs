@@ -67,8 +67,8 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
             report.PagesIndexed = pages.Count;
             report.Chunks = chunks.Count;
             _logger.LogInformation(
-                "Collected {Pages} pages and {Chunks} chunks from {Fetched} fetched (noindex {NoIndex}, duplicates {Duplicates}, empty {Empty}, errors {Errors})",
-                pages.Count, chunks.Count, report.PagesFetched, report.PagesSkippedNoIndex, report.PagesSkippedDuplicate, report.PagesSkippedEmpty, report.Errors.Count);
+                "Collected {Pages} pages and {Chunks} chunks from {Fetched} read ({NotModified} not modified, {Lastmod} unchanged by sitemap lastmod; noindex {NoIndex}, duplicates {Duplicates}, empty {Empty}, errors {Errors})",
+                pages.Count, chunks.Count, report.PagesFetched, report.PagesNotModified, report.PagesSkippedByLastmod, report.PagesSkippedNoIndex, report.PagesSkippedDuplicate, report.PagesSkippedEmpty, report.Errors.Count);
 
             CheckSafety(config.Safety, report, pages.Count);
 
@@ -160,10 +160,13 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
     {
         var filter = new GlobMatcher(config.Crawl.Include, config.Crawl.Exclude);
         using var http = CreateHttpClient(config.Crawl);
+        var storePath = PageStore.PathFor(Path.Combine(baseDirectory, config.Cache.Path));
+        using var store = config.Source.Type == SourceType.Crawl && config.Crawl.SkipUnchanged && config.Cache.Enabled ? new PageStore(storePath, siteUri) : null;
+        _logger.LogDebug("Page store {Store}", store is null ? "off" : storePath);
         ISiteSource source = config.Source.Type switch
         {
             SourceType.Folder => new FolderSource(Path.GetFullPath(Path.Combine(baseDirectory, config.Source.Folder!)), siteUri, config.Source.FolderUrlStyle, filter, config.Crawl.MaxPages, loggerFactory.CreateLogger<FolderSource>()),
-            _ => new CrawlSource(http, config.Crawl, siteUri, filter, loggerFactory.CreateLogger<CrawlSource>()),
+            _ => new CrawlSource(http, config.Crawl, siteUri, filter, loggerFactory.CreateLogger<CrawlSource>(), store),
         };
 
         var extractor = new HtmlExtractor();
@@ -179,15 +182,25 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
         {
             report.PagesFetched++;
             ExtractedPage extracted;
-            try
+            if (raw.Replayed is not null)
             {
-                extracted = extractor.Extract(raw.Html, raw.Url, raw.LastModifiedHint);
+                extracted = raw.Replayed;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            else
             {
-                report.Errors.Add($"{raw.Url}: extraction failed: {ex.Message}");
-                _logger.LogWarning(ex, "Could not extract {Url}: {Message}", raw.Url, ex.Message);
-                continue;
+                try
+                {
+                    extracted = extractor.Extract(raw.Html, raw.Url, raw.LastModifiedHint);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    report.Errors.Add($"{raw.Url}: extraction failed: {ex.Message}");
+                    _logger.LogWarning(ex, "Could not extract {Url}: {Message}", raw.Url, ex.Message);
+                    continue;
+                }
+
+                // Dropped pages are stored too, so the next build does not download them only to drop them again.
+                store?.Put(new PageStore.Entry(raw.Url, raw.ETag, raw.LastModified, raw.SitemapLastmod, extracted, raw.Links, DateTimeOffset.UtcNow));
             }
 
             siteName ??= extracted.SiteName;
@@ -252,10 +265,15 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
                 embeddingTexts.Add(ChunkRecord.BuildEmbeddingText(page.Title, path, chunk.Text));
             }
 
-            _logger.LogInformation("Indexed {Url} ({Chunks} chunks, {Chars} chars, {Source})", page.Url, ordinal, extracted.TextLength, extracted.ContentSource);
+            _logger.LogInformation("Indexed {Url} ({Chunks} chunks, {Chars} chars, {Source}{Replayed})", page.Url, ordinal, extracted.TextLength, extracted.ContentSource, raw.Replayed is null ? "" : ", unchanged");
         }
 
         report.Errors.AddRange(source.Errors.Select(e => $"{e.Url}: {e.Message}"));
+        if (source is CrawlSource crawl)
+        {
+            report.PagesNotModified = crawl.NotModifiedCount;
+            report.PagesSkippedByLastmod = crawl.SkippedByLastmodCount;
+        }
         return (pages, chunks, embeddingTexts, siteName);
     }
 
