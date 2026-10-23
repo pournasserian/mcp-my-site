@@ -6,6 +6,18 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `Telemetry:Metrics` names the instrument groups the server exports (`server`, `aspnetcore`,
+  `httpclient`, `runtime`; default all four), so a deployment can drop the ASP.NET Core, HttpClient
+  and runtime series that make up most of the metric volume, and
+  `Telemetry:MetricExportIntervalSeconds` spaces metric exports out with the OTLP exporter. An
+  unknown group name stops the server at startup (#46).
+- The MCP SDK's spans and the server's `mcpmysite.search` and `mcpmysite.fetch` spans and counters
+  carry `mcp.client.name`, `mcp.client.version` and `mcp.protocol.version` from the client's
+  `clientInfo`; on the stateless transport the client is known on `initialize` and, from the
+  `2026-07-28` revision, on every request (#44).
+
 ### Changed
 
 - The user guide gives the current reason for the 2,000-character cap on server instructions:

@@ -742,6 +742,8 @@ variables win over the file. All settings are read at startup; restart after cha
 | `Cloudflare:TrustConnectingIp` | `true` | Behind Cloudflare, take the client IP from `CF-Connecting-IP` and tag requests with `CF-Ray` and `CF-IPCountry`. Only believed when the connection comes from `Cloudflare:TrustedNetworks`, so it is inert anywhere else. Section 7.6. |
 | `Cloudflare:TrustedNetworks` | Cloudflare's published ranges | CIDR ranges of the Cloudflare edge, IPv4 and IPv6, from <https://www.cloudflare.com/ips>. Shipped in `appsettings.json`; replace the list when Cloudflare publishes new ranges. |
 | `Telemetry:Exporter` | `Auto` | Where traces, metrics and logs are exported on top of the console log: `Auto` (Application Insights when `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, otherwise OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, otherwise nowhere), `None`, `AzureMonitor` or `Otlp`. Section 7.10. |
+| `Telemetry:Metrics` | `server, aspnetcore, httpclient, runtime` | The instrument groups to export, comma separated: `server` (the project's own `mcpmysite.*`, the MCP SDK's `mcp.server.*` and the embedding calls' `gen_ai.*`), `aspnetcore` (`http.server.*`, `kestrel.*`), `httpclient` (`http.client.*`, `dns.*`) and `runtime` (`dotnet.*`). A name that is not a group stops the server at startup. Section 7.10. |
+| `Telemetry:MetricExportIntervalSeconds` | exporter default (60) | Seconds between metric exports with the OTLP exporter. The Azure Monitor exporter exports every 60 seconds and offers no way to change that, so the server refuses to start when it is set with that exporter. |
 | `Telemetry:LogQueryText` | `false` | Include query text, request query strings, and fetch targets that match no page in logs and trace tags. Off by default because queries can carry personal data. |
 | `Telemetry:LogBodies` | `false` | Log the request and response bodies of `/mcp` and `/api/search`, capped at 8 KB, with an allowlist of headers and credentials masked. Includes what people search for. Section 7.10. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | | Application Insights connection string, for the optional Azure Monitor exporter. |
@@ -1060,12 +1062,12 @@ Besides incoming requests, outgoing HTTP calls and .NET runtime metrics, the ser
 
 | Signal | Name | Tags |
 |---|---|---|
-| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`) |
-| Span | `mcpmysite.fetch` | `mcpmysite.channel`, `mcpmysite.found`, `mcpmysite.url` (pages found; misses only with `Telemetry:LogQueryText`) |
+| Span | `mcpmysite.search` | `mcpmysite.channel`, `mcpmysite.limit`, `mcpmysite.fallback`, `mcpmysite.hits`, `mcpmysite.query` (only with `Telemetry:LogQueryText`), and the MCP client tags below |
+| Span | `mcpmysite.fetch` | `mcpmysite.channel`, `mcpmysite.found`, `mcpmysite.url` (pages found; misses only with `Telemetry:LogQueryText`), and the MCP client tags below |
 | Span | `mcpmysite.index.load` | `mcpmysite.index.source` (`path` or `url`), `mcpmysite.index.outcome` |
-| Counter | `mcpmysite.search.requests` | `channel` (`mcp` or `api`), `fallback` (`true` when keyword-only) |
+| Counter | `mcpmysite.search.requests` | `channel` (`mcp` or `api`), `fallback` (`true` when keyword-only), and the MCP client tags below |
 | Histogram | `mcpmysite.search.duration` (ms) | same |
-| Counter | `mcpmysite.fetch.requests` | `channel`, `found` |
+| Counter | `mcpmysite.fetch.requests` | `channel`, `found`, and the MCP client tags below |
 | Histogram | `mcpmysite.fetch.duration` (ms) | same |
 | Counter | `mcpmysite.index.loads` | `outcome`: `loaded`, `unchanged`, `failed` or `cancelled` |
 | Histogram | `mcpmysite.index.load.duration` (ms) | same |
@@ -1086,6 +1088,26 @@ the forwarded address headers.
 It also collects the MCP SDK's spans and metrics (one span per JSON-RPC call, such as
 `tools/call search`, with the tool name) and the embedding calls, which follow the OpenTelemetry GenAI
 conventions: model, duration and token usage, never the text.
+
+**MCP client tags.** The SDK's span for every JSON-RPC call, and the server's `mcpmysite.search` and
+`mcpmysite.fetch` spans and counters, carry `mcp.client.name` and `mcp.client.version` from the
+client's `clientInfo` (for example `claude-ai` or `cursor`) and `mcp.protocol.version`, the revision
+negotiated for the call. The server runs in stateless mode, so on the `2025-11-25` revision and
+earlier the client is only known on the `initialize` call itself, which is enough to chart which
+assistants connect and which fail there; `tools/call` requests carry the protocol version from their
+header and no client name. On the `2026-07-28` revision every request names the client in its
+`_meta`, so every span and counter is tagged. The SDK's own `mcp.server.*` metrics have no hook for
+extra tags and stay as they are.
+
+**Metric volume.** Most of the metric volume comes from the ASP.NET Core, HttpClient and runtime
+instrumentation, exported once a minute per tag set, not from the server's own instruments.
+`Telemetry:Metrics` names the groups to export, comma separated: `server` (the tables above, the MCP
+SDK's and the embedding instruments), `aspnetcore`, `httpclient` and `runtime`. The default is all
+four; `Telemetry__Metrics=server` keeps only the server's own series, and a group left out is dropped
+even when the Azure Monitor exporter registers it on its own. A name that is not a group stops the
+server at startup. `Telemetry:MetricExportIntervalSeconds` spaces the exports out with the OTLP
+exporter; the Azure Monitor exporter exports every 60 seconds and offers no setting for it, so the
+server refuses to start when the interval is set with that exporter.
 
 The indexer reports as service `mcpmysite-indexer`:
 

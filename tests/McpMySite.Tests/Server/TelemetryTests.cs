@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Http.Json;
@@ -389,5 +390,219 @@ public class ServerTelemetryUnitTests
         Assert.DoesNotContain(logs.Entries, e => e.Message.Contains("TOPSECRETSIGNATURE", StringComparison.Ordinal));
 
         await app.StopAsync();
+    }
+}
+
+public class MetricGroupTests
+{
+    [Fact]
+    public void EmptySettingMeansEveryGroup()
+    {
+        Assert.Equal(TelemetrySetup.MetricGroups.ToHashSet(), TelemetrySetup.ParseMetricGroups(null));
+        Assert.Equal(TelemetrySetup.MetricGroups.ToHashSet(), TelemetrySetup.ParseMetricGroups(" "));
+        Assert.Equal(["runtime", "server"], TelemetrySetup.ParseMetricGroups("Server, runtime").Order());
+    }
+
+    [Fact]
+    public void UnknownGroupFailsStartup()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Telemetry:Metrics"] = "server, kestrel" });
+
+        var error = Assert.Throws<InvalidOperationException>(() => builder.AddSiteTelemetry());
+        Assert.Contains("kestrel", error.Message);
+        Assert.Contains("server, aspnetcore, httpclient, runtime", error.Message);
+    }
+
+    [Fact]
+    public void IntervalIsRejectedWithAzureMonitor()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["APPLICATIONINSIGHTS_CONNECTION_STRING"] = "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+            ["Telemetry:MetricExportIntervalSeconds"] = "300",
+        });
+
+        var error = Assert.Throws<InvalidOperationException>(() => builder.AddSiteTelemetry());
+        Assert.Contains("AzureMonitor", error.Message);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("server, runtime", true)]
+    [InlineData("server", false)]
+    public async Task OnlyTheNamedGroupsAreExported(string? groups, bool runtime)
+    {
+        // Telemetry settings are read while Program runs, so they go in as host settings like the exporter's.
+        await using var collector = await FakeCollector.StartAsync();
+        var (factory, client) = await LoggedServer.StartAsync(new CapturedLogs(), [], new()
+        {
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = collector.Endpoint,
+            ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf",
+            ["Telemetry:Metrics"] = groups,
+            ["Telemetry:MetricExportIntervalSeconds"] = "600",
+        });
+
+        using (factory)
+        using (client)
+        {
+            (await client.GetAsync("/api/search?q=rockets")).EnsureSuccessStatusCode();
+            TelemetrySetup.FlushTelemetry(factory.Services);
+        }
+
+        var exported = string.Join(", ", System.Text.RegularExpressions.Regex.Matches(collector.Dump(), @"\b(dotnet|http|kestrel|process|mcpmysite)\.[a-z_.]+").Select(m => m.Value).Distinct().Order());
+        Assert.True(collector.Received("/v1/metrics", "mcpmysite.search.requests"), "No search metric. Exported: " + exported);
+        Assert.True(runtime == collector.Received("/v1/metrics", "dotnet.gc."), "Exported: " + exported);
+
+        // Request metrics are recorded as a request completes, which can be after the flush, so the groups that
+        // have them are only checked for absence.
+        var http = collector.Received("/v1/metrics", "http.client.") || collector.Received("/v1/metrics", "http.server.") || collector.Received("/v1/metrics", "kestrel.");
+        Assert.True(groups is null || !http, "Exported: " + exported);
+    }
+
+    [Fact]
+    public async Task AzureMonitorDoesNotBringBackAGroupLeftOut()
+    {
+        await using var collector = await FakeCollector.StartAsync();
+        var (factory, client) = await LoggedServer.StartAsync(new CapturedLogs(), [], new()
+        {
+            ["APPLICATIONINSIGHTS_CONNECTION_STRING"] = collector.AzureMonitorConnectionString + $";LiveEndpoint={collector.Endpoint}/",
+            ["AzureMonitor:EnableLiveMetrics"] = "false",
+            ["AzureMonitor:EnableStandardMetrics"] = "false",
+            ["Telemetry:Metrics"] = "server",
+        });
+
+        using (factory)
+        using (client)
+        {
+            (await client.GetAsync("/api/search?q=rockets")).EnsureSuccessStatusCode();
+            TelemetrySetup.FlushTelemetry(factory.Services);
+        }
+
+        // The distro registers the ASP.NET Core and HttpClient meters on its own; the view must still drop them.
+        Assert.True(collector.Received("/v2.1/track", "\"name\":\"mcpmysite.search.requests\""), $"No search metric. Received: {collector.Dump()}");
+        Assert.False(collector.Received("/v2.1/track", "\"name\":\"http.server.") || collector.Received("/v2.1/track", "\"name\":\"http.client."), collector.Dump());
+    }
+}
+
+public class McpClientTagTests
+{
+    [Fact]
+    public async Task ClientNamedInRequestMetaTagsTheServersSpansAndCounters()
+    {
+        var activities = new List<Activity>();
+        var measurements = new List<KeyValuePair<string, object?>[]>();
+        using var tracing = Listen(activities);
+        using var metrics = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter == ServerDiagnostics.Meter && instrument.Name == "mcpmysite.search.requests")
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        metrics.SetMeasurementEventCallback<long>((_, _, tags, _) => { lock (measurements) { measurements.Add(tags.ToArray()); } });
+        metrics.Start();
+
+        var (factory, client) = await LoggedServer.StartAsync(new CapturedLogs(), []);
+        using (factory)
+        using (client)
+        {
+            var response = await McpAsync(client, new
+            {
+                jsonrpc = "2.0",
+                id = 1,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "search",
+                    arguments = new { query = "widgets" },
+                    _meta = new Dictionary<string, object>
+                    {
+                        ["io.modelcontextprotocol/protocolVersion"] = "2026-07-28",
+                        ["io.modelcontextprotocol/clientCapabilities"] = new { },
+                        ["io.modelcontextprotocol/clientInfo"] = new { name = "meta-test-client", version = "4.2" },
+                    },
+                },
+            }, "2026-07-28", "tools/call", "search");
+            Assert.True(response.IsSuccessStatusCode, response.StatusCode + ": " + await response.Content.ReadAsStringAsync());
+        }
+
+        var search = Assert.Single(activities, a => a.OperationName == "mcpmysite.search" && a.GetTagItem("mcp.client.name") as string == "meta-test-client");
+        Assert.Equal("4.2", search.GetTagItem("mcp.client.version"));
+        Assert.Equal("2026-07-28", search.GetTagItem("mcp.protocol.version"));
+
+        var sdk = Assert.Single(activities, a => a.Source.Name == ServerDiagnostics.McpSdkName && a.GetTagItem("mcp.client.name") as string == "meta-test-client");
+        Assert.StartsWith("tools/call", sdk.OperationName);
+
+        var counted = Assert.Single(measurements, m => m.Any(t => t.Key == "mcp.client.name" && t.Value as string == "meta-test-client"));
+        Assert.Contains(counted, t => t.Key == "mcp.client.version" && t.Value as string == "4.2");
+        Assert.Contains(counted, t => t.Key == "channel" && t.Value as string == "mcp");
+    }
+
+    [Fact]
+    public async Task InitializeSpanCarriesTheClientItIntroduced()
+    {
+        var activities = new List<Activity>();
+        using var tracing = Listen(activities);
+
+        var (factory, client) = await LoggedServer.StartAsync(new CapturedLogs(), []);
+        using (factory)
+        using (client)
+        {
+            var response = await McpAsync(client, new
+            {
+                jsonrpc = "2.0",
+                id = 1,
+                method = "initialize",
+                @params = new { protocolVersion = "2025-11-25", capabilities = new { }, clientInfo = new { name = "init-test-client", version = "0.1" } },
+            });
+            response.EnsureSuccessStatusCode();
+        }
+
+        var init = Assert.Single(activities, a => a.GetTagItem("mcp.client.name") as string == "init-test-client");
+        Assert.Equal(ServerDiagnostics.McpSdkName, init.Source.Name);
+        Assert.StartsWith("initialize", init.OperationName);
+        Assert.Equal("0.1", init.GetTagItem("mcp.client.version"));
+        Assert.Equal("2025-11-25", init.GetTagItem("mcp.protocol.version"));
+    }
+
+    private static ActivityListener Listen(List<Activity> activities)
+    {
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name is ServerDiagnostics.Name or ServerDiagnostics.McpSdkName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity => { lock (activities) { activities.Add(activity); } },
+        };
+        ActivitySource.AddActivityListener(listener);
+        return listener;
+    }
+
+    // The 2026-07-28 transport wants the method, and for tools/call the tool, repeated in headers.
+    private static async Task<HttpResponseMessage> McpAsync(HttpClient client, object request, string? protocolVersion = null, string? mcpMethod = null, string? mcpName = null)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent.Create(request) };
+        message.Headers.Accept.ParseAdd("application/json");
+        message.Headers.Accept.ParseAdd("text/event-stream");
+        if (protocolVersion is not null)
+        {
+            message.Headers.Add("MCP-Protocol-Version", protocolVersion);
+        }
+
+        if (mcpMethod is not null)
+        {
+            message.Headers.Add("Mcp-Method", mcpMethod);
+        }
+
+        if (mcpName is not null)
+        {
+            message.Headers.Add("Mcp-Name", mcpName);
+        }
+
+        return await client.SendAsync(message);
     }
 }

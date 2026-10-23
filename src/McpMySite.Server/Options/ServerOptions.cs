@@ -89,6 +89,15 @@ public sealed class TelemetryOptions
     public TelemetryExporter Exporter { get; set; } = TelemetryExporter.Auto;
 
     /// <summary>
+    /// The instrument groups to export, comma separated: server (the project's own and the MCP SDK's and embedding
+    /// instruments), aspnetcore, httpclient and runtime. Empty means all four.
+    /// </summary>
+    public string Metrics { get; set; } = string.Join(", ", TelemetrySetup.MetricGroups);
+
+    /// <summary>Seconds between metric exports. Unset keeps the exporter's own default of 60.</summary>
+    public int? MetricExportIntervalSeconds { get; set; }
+
+    /// <summary>
     /// Include the query text, and fetch targets that match no page, in logs and traces. Off by default because
     /// queries can contain personal data.
     /// </summary>
