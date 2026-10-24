@@ -1,3 +1,4 @@
+using McpMySite.Indexer.Chunking;
 using System.Text.RegularExpressions;
 
 namespace McpMySite.Indexer.Build;
@@ -81,7 +82,7 @@ public static partial class SignalProbe
                     tables++;
                 }
 
-                if (ListItemRegex().IsMatch(line))
+                if (ListItemRegex().IsMatch(line) && !HorizontalRuleRegex().IsMatch(line))
                 {
                     listItems++;
                 }
@@ -98,8 +99,7 @@ public static partial class SignalProbe
                 }
             }
 
-            var words = markdown.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
-            return new Shape(words, internalLinks, externalLinks, images, tables, codeBlocks, codeSpans, listItems);
+            return new Shape(CountWords(markdown), internalLinks, externalLinks, images, tables, codeBlocks, codeSpans, listItems);
         }
     }
 
@@ -113,12 +113,18 @@ public static partial class SignalProbe
             return LinkKind.Skip;
         }
 
-        if (!Uri.TryCreate(target, UriKind.Absolute, out var uri))
+        if (target.StartsWith("//", StringComparison.Ordinal))
+        {
+            target = siteUri.Scheme + ":" + target;
+        }
+
+        // Relative targets are decided by the scheme test, not by Uri parsing: on Unix "/about" parses as file:///about.
+        if (!SchemeRegex().IsMatch(target))
         {
             return LinkKind.Internal;
         }
 
-        if (uri.Scheme is not ("http" or "https"))
+        if (!Uri.TryCreate(target, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
         {
             return LinkKind.Skip;
         }
@@ -126,8 +132,17 @@ public static partial class SignalProbe
         return string.Equals(uri.Host, siteUri.Host, StringComparison.OrdinalIgnoreCase) ? LinkKind.Internal : LinkKind.External;
     }
 
-    [GeneratedRegex(@"^\s{0,3}(```|~~~)")]
-    private static partial Regex FenceRegex();
+    /// <summary>Same split as <see cref="IndexStats.Words"/>, so the two figures agree.</summary>
+    public static int CountWords(string markdown) => markdown.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+
+    private static Regex FenceRegex() => MarkdownChunker.FenceRegex();
+
+    [GeneratedRegex(@"^[a-zA-Z][a-zA-Z0-9+.\-]*:")]
+    private static partial Regex SchemeRegex();
+
+    // "- - -" or "* * *": a horizontal rule, which the list item pattern would otherwise match.
+    [GeneratedRegex(@"^\s*([-*_])(\s*\1){2,}\s*$")]
+    private static partial Regex HorizontalRuleRegex();
 
     // A table's header separator: only pipes, dashes, colons and spaces, with at least one pipe and a dash run.
     [GeneratedRegex(@"^(?=.*\|)(?=.*---)[\s|:\-]+$")]

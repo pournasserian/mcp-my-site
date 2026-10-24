@@ -35,6 +35,10 @@ public class SignalProbeTests
             - second
             1. third
 
+            * * *
+
+            A protocol-relative [link](//other.example/x) is external; [this one](//example.test/y) is internal.
+
             ```bash
             | --- | not a table |
             - not a list item
@@ -47,8 +51,8 @@ public class SignalProbeTests
         var bundle = SignalProbe.Profile(Site, pages, chunks, keywordOnly: false, new BuildReport(), BuiltAt);
         var profile = bundle.Profile;
 
-        Assert.Equal(new Signal(1, 3), profile[SignalNames.InternalLinks]);
-        Assert.Equal(new Signal(1, 1), profile[SignalNames.ExternalLinks]);
+        Assert.Equal(new Signal(1, 4), profile[SignalNames.InternalLinks]);
+        Assert.Equal(new Signal(1, 2), profile[SignalNames.ExternalLinks]);
         Assert.Equal(new Signal(1, 1), profile[SignalNames.Images]);
         Assert.Equal(new Signal(1, 1), profile[SignalNames.Tables]);
         Assert.Equal(new Signal(1, 1), profile[SignalNames.CodeBlocks]);
@@ -107,6 +111,7 @@ public class SignalProbeTests
         Assert.Contains("\"formatVersion\": 1", json);
         Assert.Equal(bundle.BuiltAt, parsed.BuiltAt);
         Assert.Equal(bundle.Profile[SignalNames.Words], parsed.Profile[SignalNames.Words]);
+        Assert.Throws<InvalidDataException>(() => ExploreBundle.Parse(json.Replace("\"formatVersion\": 1", "\"formatVersion\": 2")));
     }
 
     [Fact]

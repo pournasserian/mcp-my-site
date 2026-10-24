@@ -344,8 +344,10 @@ low-text pages and the content-selection strategy per page; it is the diagnostic
 A successful build also writes `explore.json`, the signal profile of the index: for each kind of
 content a view could draw on (sections, headings, dates, languages, internal and external links,
 tables, code, lists, images, embeddings, extraction diagnostics) the number of pages that carry it
-and the number of occurrences. `SignalProbe` counts them from the pages, chunks and report alone,
-skipping fenced code so its contents count as nothing but code. Views built on the profile (#28)
+and the number of occurrences. `SignalProbe` counts them from the pages, chunks and report alone;
+links, images, tables, lists and code spans inside fenced code are not counted, so a Markdown sample
+counts as nothing but a code block (the word count, shared with `stats.words`, covers the whole
+page). Views built on the profile (#28)
 declare the signals they need and are hidden with a reason when the site lacks them, so the probe
 reports every signal, zeros included. The file has its own `formatVersion`, follows the manifest's
 additive rules (section 6), sits next to the index rather than in it, and the server does not read it

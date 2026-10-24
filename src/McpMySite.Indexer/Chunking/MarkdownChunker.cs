@@ -256,7 +256,7 @@ public sealed partial class MarkdownChunker(int maxChars = 1500, int minChars = 
     private static partial Regex EmphasisRegex();
 
     [GeneratedRegex(@"^\s{0,3}(```|~~~)")]
-    private static partial Regex FenceRegex();
+    internal static partial Regex FenceRegex();
 
     [GeneratedRegex(@"(?<=[.!?])\s+(?=[A-Z0-9""'\(\[])")]
     private static partial Regex SentenceRegex();

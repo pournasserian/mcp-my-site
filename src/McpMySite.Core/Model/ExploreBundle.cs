@@ -24,8 +24,16 @@ public sealed record ExploreBundle
 
     public string ToJson() => JsonSerializer.Serialize(this, IndexManifest.JsonOptions);
 
-    public static ExploreBundle Parse(string json) =>
-        JsonSerializer.Deserialize<ExploreBundle>(json, IndexManifest.JsonOptions) ?? throw new InvalidDataException("Explore bundle is empty.");
+    public static ExploreBundle Parse(string json)
+    {
+        var bundle = JsonSerializer.Deserialize<ExploreBundle>(json, IndexManifest.JsonOptions) ?? throw new InvalidDataException("Explore bundle is empty.");
+        if (bundle.FormatVersion != CurrentFormatVersion)
+        {
+            throw new InvalidDataException($"Explore bundle format version {bundle.FormatVersion} is not supported. Supported: {CurrentFormatVersion}.");
+        }
+
+        return bundle;
+    }
 }
 
 /// <param name="Pages">Pages that carry the signal at least once.</param>

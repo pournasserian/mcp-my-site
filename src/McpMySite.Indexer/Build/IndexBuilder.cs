@@ -294,7 +294,7 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
         Errors = report.Errors.Count,
         EmbeddingsGenerated = report.EmbeddingsGenerated,
         EmbeddingsFromCache = report.EmbeddingsFromCache,
-        Words = pages.Sum(p => (long)p.Markdown.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length),
+        Words = pages.Sum(p => (long)SignalProbe.CountWords(p.Markdown)),
         NewestPageModified = pages.Max(p => p.Modified),
         Languages = pages.GroupBy(p => p.Language).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count()),
         Sections = SiteOutline.Sections(pages).Select(s => new SectionStats(s.Path, s.Title, s.Pages.Count)).ToList(),
