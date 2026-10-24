@@ -673,9 +673,20 @@ A successful build also writes `explore.json`, a profile of what the index holds
 each signal has `pages` (pages that carry it) and `count` (occurrences, or distinct values where that
 is the useful figure): `sections`, `headings`, `words`, `chunks`, `dates`, `languages`,
 `internalLinks`, `externalLinks`, `images`, `tables`, `codeBlocks`, `codeSpans`, `listItems`,
-`embeddings`, `thinPages` and `autoExtracted`. It is the groundwork for site visualisations that
-show only the views a site has content for; the server does not use it yet, and publishing the index
-without it is fine.
+`embeddings`, `thinPages` and `autoExtracted`.
+
+The file also holds the site's link graph. `pages` lists every indexed page with its `id`, `url`,
+`section` (the first path segment, `/` for the home page), `words`, `depth` (clicks from the home
+page over internal links; absent when no path leads there or the home page was not indexed),
+`inbound` and `outbound` (how many indexed pages link to it and how many it links to). `edges`
+holds each internal link between two indexed pages once, as `[fromPageId, toPageId]`. `ghosts`
+lists internal link targets that are not in the index, as a normalised URL (host and path, no
+scheme or fragment) with the number of pages linking to it: broken links, pages the crawl never
+reached, or pages excluded by `noindex` or the exclude patterns. Images, stylesheets, scripts, fonts
+and archives are left out of the graph.
+
+It is the groundwork for site visualisations that show only the views a site has content for; the
+server does not use it yet, and publishing the index without it is fine.
 
 ### 6.8 Server instructions from the index
 
@@ -1778,7 +1789,7 @@ MIT.
 index/
   manifest.json      always; read first by the server
   report.json        run report, not used by the server
-  explore.json       signal profile of the index (section 6.7), not used by the server
+  explore.json       signal profile and link graph of the index (section 6.7), not used by the server
   pages.json         json store: array of pages
   chunks.json        json store: array of chunks
   vectors.bin        json store: float32 little-endian, chunkCount × dimensions, in chunk order
