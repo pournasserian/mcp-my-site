@@ -3,7 +3,7 @@
 Install, configure and run mcp-my-site: the indexer that turns a website into a search index, and the
 server that exposes that index to AI agents over MCP and to visitors over a search API.
 
-This guide covers version 0.2.2. Everything in it was checked against the code; where behaviour is
+This guide covers version 0.3.0. Everything in it was checked against the code; where behaviour is
 a deliberate design choice, the guide says so.
 
 ## Contents
@@ -132,7 +132,7 @@ The published folder is self-contained apart from the .NET 10 runtime. Configura
 ### 3.4 The server as a container
 
 Every release is published to GitHub Container Registry as
-`ghcr.io/pournasserian/mcp-my-site`, tagged with the version (`0.2.2`, `0.2`) and `latest`; pull
+`ghcr.io/pournasserian/mcp-my-site`, tagged with the version (`0.3.0`, `0.3`) and `latest`; pull
 it and skip the build below. To build it yourself, the Dockerfile lives at
 `src/McpMySite.Server/Dockerfile` and must be built from the repository root:
 
@@ -475,7 +475,7 @@ which is why their shipped defaults are empty.
 | `Crawl:Concurrency` | int | `4` | Parallel requests. |
 | `Crawl:DelayMilliseconds` | int | `0` | Pause before each request. Use with a low concurrency for fragile hosts. |
 | `Crawl:TimeoutSeconds` | int | `30` | Per request. Minimum 5. |
-| `Crawl:UserAgent` | string | `McpMySiteIndexer/0.2 (+https://github.com/pournasserian/mcp-my-site)` | Sent with every request. The robots.txt group `User-agent: McpMySiteIndexer` targets this crawler. |
+| `Crawl:UserAgent` | string | `McpMySiteIndexer/0.3 (+https://github.com/pournasserian/mcp-my-site)` | Sent with every request. The robots.txt group `User-agent: McpMySiteIndexer` targets this crawler. |
 | `Crawl:SkipUnchanged` | bool | `true` | Replay pages the previous build stored instead of downloading them when the sitemap `lastmod` is unchanged or the server answers `304 Not Modified`. `false` downloads every page this run. Needs `Cache:Enabled`. |
 | `Crawl:FullRefreshDays` | int | `7` | Pages last downloaded more than this many days ago are fetched unconditionally, so a change without a `lastmod` bump still gets picked up. `0` never forces a fetch. |
 | `Chunking:MaxChars` | int | `1500` | Upper bound for a chunk. Roughly 350 tokens. |
@@ -1377,7 +1377,7 @@ docker run --rm -p 8080:8080 \
   -e Index__Url=https://example.com/index/ \
   -e Ui__PublicUrl=https://mcp.example.com \
   -e AI_API_KEY \
-  ghcr.io/pournasserian/mcp-my-site:0.2.2
+  ghcr.io/pournasserian/mcp-my-site:0.3.0
 ```
 
 To build it yourself instead, build the image from `src/McpMySite.Server/Dockerfile` with the
