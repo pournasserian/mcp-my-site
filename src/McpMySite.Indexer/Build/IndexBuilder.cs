@@ -118,6 +118,11 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
 
             using (IndexerDiagnostics.ActivitySource.StartActivity("mcpmysite.build.write"))
             {
+                // The explore bundle is a sibling of the index, not part of it, so it goes down before the index and its manifest.
+                Directory.CreateDirectory(outputDirectory);
+                var explore = SignalProbe.Profile(siteUri, pages, chunks, keywordOnly, report, builtAt);
+                await File.WriteAllTextAsync(Path.Combine(outputDirectory, IndexFormat.ExploreFileName), explore.ToJson(), cancellationToken);
+
                 var writer = IndexStoreOpener.CreateWriter(config.Output.Store);
                 await writer.WriteAsync(outputDirectory, manifest, pages, chunks, vectors, cancellationToken);
             }

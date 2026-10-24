@@ -227,7 +227,7 @@ flowchart LR
         Ext --> Chk["MarkdownChunker<br/>heading-aware pieces"]
         Chk --> Safe{"Safety checks<br/>min pages, drop %, error %"}
         Safe -->|pass| Emb["BatchEmbedder<br/>cache lookup, batches, retries"]
-        Emb --> Out["SiteOutline → instructions<br/>IIndexWriter → files"]
+        Emb --> Out["SiteOutline → instructions<br/>SignalProbe → explore.json<br/>IIndexWriter → files"]
         Safe -->|fail| Stop["exit 1<br/>previous index untouched"]
     end
     Out --> Rep["report.json"]
@@ -340,6 +340,16 @@ Three checks guard publishing: a minimum page count, a maximum drop against the 
 the output folder, and a maximum error share. They run before embedding and writing, so a failing run
 costs nothing and changes nothing except `report.json`, which is always written. The report also lists
 low-text pages and the content-selection strategy per page; it is the diagnostic surface for site owners.
+
+A successful build also writes `explore.json`, the signal profile of the index: for each kind of
+content a view could draw on (sections, headings, dates, languages, internal and external links,
+tables, code, lists, images, embeddings, extraction diagnostics) the number of pages that carry it
+and the number of occurrences. `SignalProbe` counts them from the pages, chunks and report alone,
+skipping fenced code so its contents count as nothing but code. Views built on the profile (#28)
+declare the signals they need and are hidden with a reason when the site lacks them, so the probe
+reports every signal, zeros included. The file has its own `formatVersion`, follows the manifest's
+additive rules (section 6), sits next to the index rather than in it, and the server does not read it
+yet.
 
 ## 5. Server
 
@@ -532,7 +542,8 @@ The manifest is the contract between indexer and server.
 | Zero-page manifests are invalid | An empty build can never replace a good index, even if it slipped past the indexer's checks |
 
 Adding a store type means adding its file list to `IndexStoreOpener.FileNames` so the URL loader
-knows what to fetch.
+knows what to fetch. `report.json` and `explore.json` are deliberately not in that list: they sit next
+to the index, are not needed to serve it, and an index published without them still loads.
 
 ## 7. Cross-cutting concerns
 
@@ -622,7 +633,7 @@ McpMySite.slnx
 src/
   McpMySite.Core/
     IndexFormat.cs                 version, file names, store type names
-    Model/                         IndexManifest, PageDocument, ChunkRecord, search request/response
+    Model/                         IndexManifest, PageDocument, ChunkRecord, ExploreBundle, search request/response
     Search/                        Tokenizer, Bm25Index, VectorMath, HybridRanker, Snippets
     Stores/                        IIndexStore, IIndexWriter, IndexStoreOpener, UrlKey, Json/, Sqlite/
     Embeddings/                    EmbeddingOptions, EmbeddingGeneratorFactory
@@ -634,7 +645,7 @@ src/
     Extraction/                    HtmlExtractor, ExtractedPage
     Chunking/                      MarkdownChunker
     Embeddings/                    EmbeddingCache, BatchEmbedder
-    Build/                         IndexBuilder, SiteOutline, BuildReport
+    Build/                         IndexBuilder, SiteOutline, SignalProbe, BuildReport
     Telemetry/                     IndexerDiagnostics, IndexerTelemetry (logging and export setup)
     appsettings.defaults.json      every setting and its default, shipped with the tool
   McpMySite.Server/

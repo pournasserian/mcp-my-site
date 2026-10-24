@@ -669,6 +669,14 @@ without vectors.
 Look at `lowTextPages` after the first build. They are the pages whose markup the extractor did not
 understand, or pages that genuinely have little text.
 
+A successful build also writes `explore.json`, a profile of what the index holds. Under `profile`,
+each signal has `pages` (pages that carry it) and `count` (occurrences, or distinct values where that
+is the useful figure): `sections`, `headings`, `words`, `chunks`, `dates`, `languages`,
+`internalLinks`, `externalLinks`, `images`, `tables`, `codeBlocks`, `codeSpans`, `listItems`,
+`embeddings`, `thinPages` and `autoExtracted`. It is the groundwork for site visualisations that
+show only the views a site has content for; the server does not use it yet, and publishing the index
+without it is fine.
+
 ### 6.8 Server instructions from the index
 
 The indexer writes short instructions into the manifest, and the server hands them to MCP clients
@@ -1770,6 +1778,7 @@ MIT.
 index/
   manifest.json      always; read first by the server
   report.json        run report, not used by the server
+  explore.json       signal profile of the index (section 6.7), not used by the server
   pages.json         json store: array of pages
   chunks.json        json store: array of chunks
   vectors.bin        json store: float32 little-endian, chunkCount × dimensions, in chunk order
