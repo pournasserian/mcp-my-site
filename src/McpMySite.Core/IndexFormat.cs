@@ -15,6 +15,7 @@ public static class IndexFormat
     public const string VectorsFileName = "vectors.bin";
     public const string SqliteFileName = "index.sqlite";
     public const string ReportFileName = "report.json";
+    public const string ExploreFileName = "explore.json";
 
     public const string JsonStoreType = "json";
     public const string SqliteStoreType = "sqlite";

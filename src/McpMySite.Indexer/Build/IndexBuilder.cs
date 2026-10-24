@@ -118,6 +118,11 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
 
             using (IndexerDiagnostics.ActivitySource.StartActivity("mcpmysite.build.write"))
             {
+                // The explore bundle is a sibling of the index, not part of it, so it goes down before the index and its manifest.
+                Directory.CreateDirectory(outputDirectory);
+                var explore = SignalProbe.Profile(siteUri, pages, chunks, keywordOnly, report, builtAt);
+                await File.WriteAllTextAsync(Path.Combine(outputDirectory, IndexFormat.ExploreFileName), explore.ToJson(), cancellationToken);
+
                 var writer = IndexStoreOpener.CreateWriter(config.Output.Store);
                 await writer.WriteAsync(outputDirectory, manifest, pages, chunks, vectors, cancellationToken);
             }
@@ -289,7 +294,7 @@ public sealed class IndexBuilder(ILoggerFactory loggerFactory)
         Errors = report.Errors.Count,
         EmbeddingsGenerated = report.EmbeddingsGenerated,
         EmbeddingsFromCache = report.EmbeddingsFromCache,
-        Words = pages.Sum(p => (long)p.Markdown.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length),
+        Words = pages.Sum(p => (long)SignalProbe.CountWords(p.Markdown)),
         NewestPageModified = pages.Max(p => p.Modified),
         Languages = pages.GroupBy(p => p.Language).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count()),
         Sections = SiteOutline.Sections(pages).Select(s => new SectionStats(s.Path, s.Title, s.Pages.Count)).ToList(),

@@ -6,6 +6,14 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The indexer writes `explore.json` next to the index: a signal profile that records, for each kind
+  of content a visualisation could draw on (sections, headings, dates, languages, internal and
+  external links, tables, code, lists, images, embeddings, extraction diagnostics), how many pages
+  carry it and how often it occurs. It is the probe step of the content-adaptive explorer; no views
+  read it yet and the server ignores it (#28).
+
 ## [0.3.0] - 2026-10-23
 
 ### Added
