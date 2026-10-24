@@ -22,6 +22,15 @@ public sealed record ExploreBundle
     /// <summary>One entry per signal in <see cref="SignalNames"/>; a signal the probe found nowhere has zeros.</summary>
     public required IReadOnlyDictionary<string, Signal> Profile { get; init; }
 
+    /// <summary>The nodes of the link graph: one entry per indexed page, in id order. Empty in bundles from older indexers.</summary>
+    public IReadOnlyList<ExplorePage> Pages { get; init; } = [];
+
+    /// <summary>Internal links between indexed pages as [fromPageId, toPageId], each pair once; a page linking to itself is left out.</summary>
+    public IReadOnlyList<int[]> Edges { get; init; } = [];
+
+    /// <summary>Internal link targets that are not in the index, most linked first.</summary>
+    public IReadOnlyList<Ghost> Ghosts { get; init; } = [];
+
     public string ToJson() => JsonSerializer.Serialize(this, IndexManifest.JsonOptions);
 
     public static ExploreBundle Parse(string json)
@@ -42,6 +51,18 @@ public sealed record Signal(int Pages, int Count)
 {
     public static readonly Signal None = new(0, 0);
 }
+
+/// <param name="Id">The page id, as in the index.</param>
+/// <param name="Section">The top-level URL section the page belongs to, "/" for the home page.</param>
+/// <param name="Words">Whitespace-separated words of Markdown.</param>
+/// <param name="Depth">Clicks from the home page over internal links; null when no path leads there, or the home page is not indexed.</param>
+/// <param name="Inbound">Indexed pages that link to this one.</param>
+/// <param name="Outbound">Indexed pages this one links to.</param>
+public sealed record ExplorePage(int Id, string Url, string Section, int Words, int? Depth, int Inbound, int Outbound);
+
+/// <param name="Url">The target, normalised: lower-case host, no trailing slash, no fragment.</param>
+/// <param name="Pages">Indexed pages that link to it.</param>
+public sealed record Ghost(string Url, int Pages);
 
 /// <summary>Keys of <see cref="ExploreBundle.Profile"/>. Each names what counts as one occurrence.</summary>
 public static class SignalNames

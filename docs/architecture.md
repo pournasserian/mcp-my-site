@@ -349,9 +349,23 @@ links, images, tables, lists and code spans inside fenced code are not counted, 
 counts as nothing but a code block (the word count, shared with `stats.words`, covers the whole
 page). Views built on the profile (#28)
 declare the signals they need and are hidden with a reason when the site lacks them, so the probe
-reports every signal, zeros included. The file has its own `formatVersion`, follows the manifest's
-additive rules (section 6), sits next to the index rather than in it, and the server does not read it
-yet.
+reports every signal, zeros included.
+
+Next to the profile the file carries the link graph the Structure and Reach lenses draw: `pages`
+(one node per indexed page with its id, URL, section, word count, click depth from the home page
+and inbound and outbound counts), `edges` (`[fromPageId, toPageId]` pairs, ids rather than URLs to
+keep a 1,000-page bundle small) and `ghosts` (internal link targets that are not in the index, with
+the number of pages linking to each). The probe extracts links once and uses the same list for the
+`internalLinks` signal and for the graph, so the two cannot disagree. Each target is resolved
+against its page and keyed through `UrlKey.Normalize`, the page store's own key, so a trailing
+slash, a fragment or host case never splits one page into two nodes; repeated links to the same
+page collapse into one edge, a page linking to itself adds no edge, and obvious assets (images,
+styles, scripts, fonts, archives) are neither edges nor ghosts. Depth is a breadth-first walk from
+the page whose key matches the site URL; a page no path reaches, or every page when the home page
+is not indexed, has no `depth`, which is written as an absent field.
+
+The file has its own `formatVersion`, follows the manifest's additive rules (section 6), sits next
+to the index rather than in it, and the server does not read it yet.
 
 ## 5. Server
 

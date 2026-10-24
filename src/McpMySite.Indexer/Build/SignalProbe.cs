@@ -1,3 +1,4 @@
+using McpMySite.Core.Stores;
 using McpMySite.Indexer.Chunking;
 using System.Text.RegularExpressions;
 
@@ -13,7 +14,8 @@ public static partial class SignalProbe
     public static ExploreBundle Profile(Uri siteUri, IReadOnlyList<PageDocument> pages, IReadOnlyList<ChunkRecord> chunks, bool keywordOnly, BuildReport report, DateTimeOffset builtAt)
     {
         var shapes = pages.Select(p => Shape.Of(p.Markdown, siteUri)).ToList();
-        var sections = SiteOutline.Sections(pages).Where(s => s.Path != "/").ToList();
+        var allSections = SiteOutline.Sections(pages);
+        var sections = allSections.Where(s => s.Path != "/").ToList();
         var chunksPerPage = chunks.GroupBy(c => c.PageId).ToDictionary(g => g.Key, g => g.Count());
         var knownLanguages = pages.Where(p => p.Language != "und").ToList();
 
@@ -37,6 +39,8 @@ public static partial class SignalProbe
             [SignalNames.AutoExtracted] = Same(report.ContentSources.GetValueOrDefault("auto")),
         };
 
+        var graph = LinkGraph.Build(siteUri, pages, shapes, allSections);
+
         return new ExploreBundle
         {
             FormatVersion = ExploreBundle.CurrentFormatVersion,
@@ -45,6 +49,9 @@ public static partial class SignalProbe
             PageCount = pages.Count,
             ChunkCount = chunks.Count,
             Profile = profile,
+            Pages = graph.Pages,
+            Edges = graph.Edges,
+            Ghosts = graph.Ghosts,
         };
     }
 
@@ -52,12 +59,19 @@ public static partial class SignalProbe
 
     private static Signal Sum(List<Shape> shapes, Func<Shape, int> count) => new(shapes.Count(s => count(s) > 0), shapes.Sum(count));
 
-    /// <summary>Counts of the Markdown constructs on one page. Fenced code is skipped so its contents count as nothing but code.</summary>
-    private sealed record Shape(int Words, int InternalLinks, int ExternalLinks, int Images, int Tables, int CodeBlocks, int CodeSpans, int ListItems)
+    /// <summary>
+    /// Counts of the Markdown constructs on one page, plus the targets of its internal links in document order, so the
+    /// link graph is built from the same links the profile counts. Fenced code is skipped so its contents count as
+    /// nothing but code.
+    /// </summary>
+    private sealed record Shape(int Words, IReadOnlyList<string> InternalTargets, int ExternalLinks, int Images, int Tables, int CodeBlocks, int CodeSpans, int ListItems)
     {
+        public int InternalLinks => InternalTargets.Count;
+
         public static Shape Of(string markdown, Uri siteUri)
         {
-            int internalLinks = 0, externalLinks = 0, images = 0, tables = 0, codeBlocks = 0, codeSpans = 0, listItems = 0;
+            int externalLinks = 0, images = 0, tables = 0, codeBlocks = 0, codeSpans = 0, listItems = 0;
+            var internalTargets = new List<string>();
             var inFence = false;
             foreach (var line in markdown.Replace("\r\n", "\n").Split('\n'))
             {
@@ -91,16 +105,130 @@ public static partial class SignalProbe
                 codeSpans += CodeSpanRegex().Count(line);
                 foreach (Match link in LinkRegex().Matches(line))
                 {
-                    switch (Classify(link.Groups[1].Value, siteUri))
+                    var target = link.Groups[1].Value;
+                    switch (Classify(target, siteUri))
                     {
-                        case LinkKind.Internal: internalLinks++; break;
+                        case LinkKind.Internal: internalTargets.Add(target); break;
                         case LinkKind.External: externalLinks++; break;
                     }
                 }
             }
 
-            return new Shape(CountWords(markdown), internalLinks, externalLinks, images, tables, codeBlocks, codeSpans, listItems);
+            return new Shape(CountWords(markdown), internalTargets, externalLinks, images, tables, codeBlocks, codeSpans, listItems);
         }
+    }
+
+    /// <summary>
+    /// The link graph of the index: pages as nodes, internal links between indexed pages as edges, and the internal
+    /// targets that are not in the index as ghosts. Targets are resolved against their page and keyed like the page
+    /// store, so trailing slashes, host case and fragments do not split one page into several.
+    /// </summary>
+    private sealed record LinkGraph(IReadOnlyList<ExplorePage> Pages, IReadOnlyList<int[]> Edges, IReadOnlyList<Ghost> Ghosts)
+    {
+        public static LinkGraph Build(Uri siteUri, IReadOnlyList<PageDocument> pages, IReadOnlyList<Shape> shapes, IReadOnlyList<SiteOutline.Section> sections)
+        {
+            var idsByKey = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var page in pages)
+            {
+                idsByKey.TryAdd(UrlKey.Normalize(page.Url), page.Id);
+            }
+
+            var outbound = pages.ToDictionary(p => p.Id, _ => new SortedSet<int>());
+            var inbound = pages.ToDictionary(p => p.Id, _ => new HashSet<int>());
+            var ghostSources = new Dictionary<string, HashSet<int>>(StringComparer.Ordinal);
+            for (var i = 0; i < pages.Count; i++)
+            {
+                var page = pages[i];
+                var pageUri = new Uri(page.Url);
+                foreach (var target in shapes[i].InternalTargets)
+                {
+                    if (Resolve(target, pageUri, siteUri) is not { } key)
+                    {
+                        continue;
+                    }
+
+                    if (idsByKey.TryGetValue(key, out var targetId))
+                    {
+                        if (targetId != page.Id && outbound[page.Id].Add(targetId))
+                        {
+                            inbound[targetId].Add(page.Id);
+                        }
+                    }
+                    else
+                    {
+                        if (!ghostSources.TryGetValue(key, out var sources))
+                        {
+                            ghostSources[key] = sources = [];
+                        }
+
+                        sources.Add(page.Id);
+                    }
+                }
+            }
+
+            var depths = Depths(idsByKey.GetValueOrDefault(UrlKey.Normalize(siteUri.ToString()), -1), outbound);
+            var sectionByPage = sections.SelectMany(s => s.Pages.Select(p => (p.Id, s.Path))).ToDictionary(x => x.Id, x => x.Path);
+
+            var nodes = pages.Select((p, i) => new ExplorePage(
+                    p.Id, p.Url, sectionByPage[p.Id], shapes[i].Words, depths.TryGetValue(p.Id, out var depth) ? depth : null, inbound[p.Id].Count, outbound[p.Id].Count))
+                .OrderBy(n => n.Id)
+                .ToList();
+            var edges = outbound.OrderBy(o => o.Key).SelectMany(o => o.Value.Select(to => new[] { o.Key, to })).ToList();
+            var ghosts = ghostSources
+                .Select(g => new Ghost(g.Key, g.Value.Count))
+                .OrderByDescending(g => g.Pages).ThenBy(g => g.Url, StringComparer.Ordinal)
+                .ToList();
+            return new LinkGraph(nodes, edges, ghosts);
+        }
+
+        /// <summary>Breadth-first click depth from the home page; pages no path reaches are absent. Empty when the home page is not indexed.</summary>
+        private static Dictionary<int, int> Depths(int homeId, Dictionary<int, SortedSet<int>> outbound)
+        {
+            var depths = new Dictionary<int, int>();
+            if (homeId < 0)
+            {
+                return depths;
+            }
+
+            var queue = new Queue<int>();
+            depths[homeId] = 0;
+            queue.Enqueue(homeId);
+            while (queue.TryDequeue(out var id))
+            {
+                foreach (var next in outbound[id])
+                {
+                    if (depths.TryAdd(next, depths[id] + 1))
+                    {
+                        queue.Enqueue(next);
+                    }
+                }
+            }
+
+            return depths;
+        }
+
+        /// <summary>The page-store key of an internal link target, or null for a fragment-only link or an obvious asset such as an image.</summary>
+        private static string? Resolve(string target, Uri pageUri, Uri siteUri)
+        {
+            if (target.StartsWith("//", StringComparison.Ordinal))
+            {
+                target = siteUri.Scheme + ":" + target;
+            }
+
+            if (!Uri.TryCreate(pageUri, target, out var uri) || !string.Equals(uri.Host, siteUri.Host, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return AssetExtensions.Contains(Path.GetExtension(uri.AbsolutePath)) ? null : UrlKey.Normalize(uri.ToString());
+        }
+
+        // Targets the crawler never indexes as pages; images are already a signal of their own.
+        private static readonly HashSet<string> AssetExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".avif", ".ico", ".css", ".js", ".mjs", ".map",
+            ".woff", ".woff2", ".ttf", ".otf", ".mp3", ".mp4", ".webm", ".zip", ".gz", ".tar",
+        };
     }
 
     private enum LinkKind { Skip, Internal, External }

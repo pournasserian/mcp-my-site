@@ -13,6 +13,10 @@ All notable changes to this project are recorded here. The format follows
   external links, tables, code, lists, images, embeddings, extraction diagnostics), how many pages
   carry it and how often it occurs. It is the probe step of the content-adaptive explorer; no views
   read it yet and the server ignores it (#28).
+- `explore.json` also carries the site's link graph: every indexed page with its section, word
+  count, click depth from the home page and link counts, the internal links between indexed pages
+  as id pairs, and the internal link targets that are not in the index with the number of pages
+  linking to each (#28).
 
 ## [0.3.0] - 2026-10-23
 

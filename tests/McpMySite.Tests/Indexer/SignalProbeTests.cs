@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace McpMySite.Tests.Indexer;
 
-/// <summary>The signal profile of explore.json (#28): what the probe counts and what a build writes.</summary>
+/// <summary>The signal profile and link graph of explore.json (#28): what the probe counts and what a build writes.</summary>
 public class SignalProbeTests
 {
     private static readonly Uri Site = new("https://example.test/");
@@ -111,7 +111,96 @@ public class SignalProbeTests
         Assert.Contains("\"formatVersion\": 1", json);
         Assert.Equal(bundle.BuiltAt, parsed.BuiltAt);
         Assert.Equal(bundle.Profile[SignalNames.Words], parsed.Profile[SignalNames.Words]);
+        Assert.Equal(new ExplorePage(1, "https://example.test/", "/", 1, 0, 0, 0), Assert.Single(parsed.Pages));
         Assert.Throws<InvalidDataException>(() => ExploreBundle.Parse(json.Replace("\"formatVersion\": 1", "\"formatVersion\": 2")));
+    }
+
+    [Fact]
+    public void ParsesABundleWrittenBeforeTheLinkGraph()
+    {
+        const string json = """
+            { "formatVersion": 1, "siteUrl": "https://example.test/", "builtAt": "2026-10-24T00:00:00+00:00", "pageCount": 0, "chunkCount": 0, "profile": {} }
+            """;
+
+        var parsed = ExploreBundle.Parse(json);
+
+        Assert.Empty(parsed.Pages);
+        Assert.Empty(parsed.Edges);
+        Assert.Empty(parsed.Ghosts);
+    }
+
+    [Fact]
+    public void ComputesClickDepthFromTheHomePage()
+    {
+        var pages = new[]
+        {
+            Page(1, "https://example.test/", "Start at [a](/docs/a)."),
+            Page(2, "https://example.test/docs/a", "Then [b](/docs/b) and [back home](https://example.test/)."),
+            Page(3, "https://example.test/docs/b", "The end."),
+            Page(4, "https://example.test/blog/c", "Nobody links here, but it links to [a](/docs/a)."),
+            Page(5, "https://example.test/blog/d", "An island."),
+        };
+
+        var bundle = SignalProbe.Profile(Site, pages, [], keywordOnly: true, new BuildReport(), BuiltAt);
+
+        Assert.Equal(
+        [
+            new ExplorePage(1, "https://example.test/", "/", 3, 0, 1, 1),
+            new ExplorePage(2, "https://example.test/docs/a", "/docs", 5, 1, 2, 2),
+            new ExplorePage(3, "https://example.test/docs/b", "/docs", 2, 2, 1, 0),
+            new ExplorePage(4, "https://example.test/blog/c", "/blog", 8, null, 0, 1),
+            new ExplorePage(5, "https://example.test/blog/d", "/blog", 2, null, 0, 0),
+        ], bundle.Pages);
+        Assert.Equal([[1, 2], [2, 1], [2, 3], [4, 2]], bundle.Edges);
+        Assert.Empty(bundle.Ghosts);
+    }
+
+    [Fact]
+    public void DepthIsUnknownWhenTheHomePageIsNotIndexed()
+    {
+        var pages = new[]
+        {
+            Page(1, "https://example.test/docs/a", "See [b](/docs/b)."),
+            Page(2, "https://example.test/docs/b", "B."),
+        };
+
+        var bundle = SignalProbe.Profile(Site, pages, [], keywordOnly: true, new BuildReport(), BuiltAt);
+
+        Assert.All(bundle.Pages, p => Assert.Null(p.Depth));
+        Assert.Equal([[1, 2]], bundle.Edges);
+    }
+
+    [Fact]
+    public void ReportsInternalTargetsOutsideTheIndexAsGhosts()
+    {
+        var pages = new[]
+        {
+            Page(1, "https://example.test/", "A [gone page](/missing) and [its anchor](/missing#top), a [logo](/logo.png), a [sheet](/site.css), [mail](mailto:x@example.test)."),
+            Page(2, "https://example.test/docs/a", "Also [gone](https://EXAMPLE.test/missing/) and a [draft](/docs/draft?v=2)."),
+        };
+
+        var bundle = SignalProbe.Profile(Site, pages, [], keywordOnly: true, new BuildReport(), BuiltAt);
+
+        Assert.Equal([new Ghost("example.test/missing", 2), new Ghost("example.test/docs/draft?v=2", 1)], bundle.Ghosts);
+        Assert.Empty(bundle.Edges);
+        Assert.Equal(new Signal(2, 6), bundle.Profile[SignalNames.InternalLinks]);
+    }
+
+    [Fact]
+    public void CountsRepeatedLinksOnceInTheGraph()
+    {
+        var pages = new[]
+        {
+            Page(1, "https://example.test/", "[a](/docs/a), [again](/docs/a/), [anchored](/docs/a#x), [absolute](https://Example.test/docs/a) and [myself](/)."),
+            Page(2, "https://example.test/docs/a", "A."),
+        };
+
+        var bundle = SignalProbe.Profile(Site, pages, [], keywordOnly: true, new BuildReport(), BuiltAt);
+
+        Assert.Equal([[1, 2]], bundle.Edges);
+        Assert.Equal(new ExplorePage(1, "https://example.test/", "/", 6, 0, 0, 1), bundle.Pages[0]);
+        Assert.Equal(new ExplorePage(2, "https://example.test/docs/a", "/docs", 1, 1, 1, 0), bundle.Pages[1]);
+        Assert.Equal(new Signal(1, 5), bundle.Profile[SignalNames.InternalLinks]);
     }
 
     [Fact]
@@ -122,7 +211,7 @@ public class SignalProbeTests
         await File.WriteAllTextAsync(Path.Combine(folder, "site", "index.html"),
             "<html><head><title>Acme</title></head><body><main><h1>Welcome</h1><p>Acme makes rockets and widgets for everyone, every day. Read the <a href=\"/docs/fuel\">fuel guide</a>.</p></main></body></html>");
         await File.WriteAllTextAsync(Path.Combine(folder, "site", "docs", "fuel.html"),
-            "<html><head><title>Fuel</title></head><body><main><h1>Fuel</h1><p>Our rockets burn liquid oxygen and kerosene in every launch.</p><ul><li>Oxygen</li><li>Kerosene</li></ul></main></body></html>");
+            "<html><head><title>Fuel</title></head><body><main><h1>Fuel</h1><p>Our rockets burn liquid oxygen and kerosene in every launch. See the <a href=\"/docs/engines\">engine notes</a>.</p><ul><li>Oxygen</li><li>Kerosene</li></ul></main></body></html>");
 
         var config = new IndexerConfig();
         config.Site.Url = "https://probe.test";
@@ -137,10 +226,17 @@ public class SignalProbeTests
         var bundle = ExploreBundle.Parse(await File.ReadAllTextAsync(Path.Combine(folder, "index", IndexFormat.ExploreFileName)));
         Assert.Equal("https://probe.test/", bundle.SiteUrl);
         Assert.Equal(2, bundle.PageCount);
-        Assert.Equal(new Signal(1, 1), bundle.Profile[SignalNames.InternalLinks]);
+        Assert.Equal(new Signal(2, 2), bundle.Profile[SignalNames.InternalLinks]);
         Assert.Equal(new Signal(1, 2), bundle.Profile[SignalNames.ListItems]);
         Assert.Equal(new Signal(1, 1), bundle.Profile[SignalNames.Sections]);
         Assert.Equal(Signal.None, bundle.Profile[SignalNames.Embeddings]);
+
+        var home = Assert.Single(bundle.Pages, p => p.Url == "https://probe.test/");
+        var fuel = Assert.Single(bundle.Pages, p => p.Url == "https://probe.test/docs/fuel");
+        Assert.Equal(("/", 0, 0, 1), (home.Section, home.Depth, home.Inbound, home.Outbound));
+        Assert.Equal(("/docs", 1, 1, 0), (fuel.Section, fuel.Depth, fuel.Inbound, fuel.Outbound));
+        Assert.Equal([[home.Id, fuel.Id]], bundle.Edges);
+        Assert.Equal([new Ghost("probe.test/docs/engines", 1)], bundle.Ghosts);
 
         using var store = await IndexStoreOpener.OpenAsync(Path.Combine(folder, "index"));
         Assert.Equal(bundle.BuiltAt, store.Manifest.BuiltAt);
