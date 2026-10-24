@@ -59,6 +59,21 @@ public sealed class UiOptions
     /// <summary>Serve the pages meant for people: the landing page and the API reference. The OpenAPI document is always served.</summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>Serve / as the landing page. Off, / is a short text summary and a browser on Mcp:Path is not redirected to it.</summary>
+    public bool LandingPage { get; set; } = true;
+
+    /// <summary>Serve the interactive API reference at /docs. The OpenAPI document is served either way.</summary>
+    public bool ApiReference { get; set; } = true;
+
+    /// <summary>Mention the search API on the landing page, in llms.txt and in /api/info. The endpoint itself follows SearchApi:Enabled.</summary>
+    public bool ShowSearchApi { get; set; } = true;
+
+    /// <summary>Show how search works: keyword-only or hybrid, embedding model and dimensions.</summary>
+    public bool ShowSearchDetails { get; set; } = true;
+
+    /// <summary>Show the last build: source, duration, page counts, embeddings, chunks, store and indexer version. Pages and build date stay.</summary>
+    public bool ShowBuildDetails { get; set; } = true;
+
     /// <summary>
     /// Public base URL of this server, such as https://mcp.example.com, used for canonical links, the sitemap and
     /// connection snippets. Empty takes it from each request.

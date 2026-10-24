@@ -486,7 +486,7 @@ URL, look the page up in the store, return its Markdown and metadata, or a tool 
 - **HEAD** is answered by every page and JSON endpoint through the `AllowHead` convention
   (`HeadSupport`), since minimal API routing otherwise matches `HEAD` only against endpoints that
   declare it. Kestrel drops the body. A browser sending `GET` or `HEAD` to `Mcp:Path` without
-  `text/event-stream` in `Accept` is redirected to `/` while `Ui:Enabled` is on.
+  `text/event-stream` in `Accept` is redirected to `/` while `Ui:Enabled` and `Ui:LandingPage` are on.
 - **API key** is a tiny middleware on the MCP path only, comparing in constant time. The search API is
   intentionally keyless because it is called from browsers.
 - **CORS** policies always exist and are bound from options at run time; an empty origin list simply

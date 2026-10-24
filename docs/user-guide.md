@@ -751,7 +751,12 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:MaxLimit` | `20` | Upper bound for `limit`. |
 | `SearchApi:MaxOffset` | `100` | Upper bound for `offset`, on the search API and the MCP `search` tool. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
-| `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
+| `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. The five switches below hide parts of what is served while this one stays on. |
+| `Ui:LandingPage` | `true` | Serve `/` as the landing page. Off, `/` is the short text summary, `/` is left out of `sitemap.xml`, and a browser on `Mcp:Path` is no longer redirected to it. |
+| `Ui:ApiReference` | `true` | Serve the interactive API reference at `/docs`. Off, `/docs` answers `404` and is left out of the landing page, `sitemap.xml` and `/api/info`; the OpenAPI document stays. |
+| `Ui:ShowSearchApi` | `true` | Mention the search API on the landing page, in `llms.txt` and in `/api/info`'s `endpoints`. Hiding is not access control: the endpoint itself follows `SearchApi:Enabled`. |
+| `Ui:ShowSearchDetails` | `true` | Show how search works: keyword-only or hybrid, the embedding model and dimensions, on the landing page and in `/api/info`. Search answers carry `keywordOnly` either way. |
+| `Ui:ShowBuildDetails` | `true` | Show the last build: source, duration, page and embedding counts, chunks, store, format and indexer version, with the words, sections and languages that come from the same build statistics, on the landing page and in `/api/info`. The page keeps the page count and build date. |
 | `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
 | `Ui:StaleAfterDays` | `30` | The landing page and `/api/info` flag the index as stale when it is older than this. `0` turns the flag off. |
 | `Ui:FrameAncestors` | `[]` | Origins allowed to embed the pages in a frame, as CSP `frame-ancestors` sources (`https://www.example.com`, `'self'`). Empty denies framing everywhere. Section 12. |
@@ -800,8 +805,9 @@ URL, and the server picks it up within the poll interval.
 - Clients must send `Accept: application/json, text/event-stream` (the MCP specification requires
   it); the response is a single JSON or SSE message.
 - A person who opens the endpoint's URL in a browser is redirected to the landing page: any `GET` or
-  `HEAD` on `Mcp:Path` without `text/event-stream` in `Accept` goes to `/` while `Ui:Enabled` is on.
-  With the pages off, the transport answers `405` as the specification says.
+  `HEAD` on `Mcp:Path` without `text/event-stream` in `Accept` goes to `/` while `Ui:Enabled` and
+  `Ui:LandingPage` are on. With the landing page off, the transport answers `405` as the specification
+  says.
 - Discovery: `GET {Mcp:Path}/server-card` answers with the server card of
   [SEP-2127](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/seps/2127-mcp-server-cards.md)
   as `application/mcp-server-card+json`: the server's registry name, version, repository, the
@@ -917,8 +923,9 @@ larger `offset` would return more; an offset past the last hit returns an empty 
 The API is described by an OpenAPI 3.1 document at `/openapi/v1.json`, titled after the loaded site.
 Point a client generator or an API tool at it. `/docs` renders the same document as an interactive
 reference (Scalar) where you can try queries; its script is served by the server itself, so the page
-works without access to a CDN. Set `Ui:Enabled` to `false` to drop the page. The MCP endpoint is not
-part of the document; MCP clients discover its tools through `tools/list`.
+works without access to a CDN. Set `Ui:ApiReference` (or `Ui:Enabled`) to `false` to drop the page;
+the document is served either way. The MCP endpoint is not part of the document; MCP clients
+discover its tools through `tools/list`.
 
 ### 7.6 Rate limiting
 
@@ -978,7 +985,7 @@ shape and no `index` until an index is loaded, and it is in the OpenAPI document
 
 ### 7.8 The landing page
 
-With `Ui:Enabled` on, `GET /` is a page for people who open the server's URL:
+With `Ui:Enabled` and `Ui:LandingPage` on, `GET /` is a page for people who open the server's URL:
 
 - the site's name, description and link;
 - how to connect: the MCP URL with a copy button and ready-made setup for Claude Code, Claude.ai and
@@ -992,12 +999,23 @@ With `Ui:Enabled` on, `GET /` is a page for people who open the server's URL:
 - the search API with an example and links to the OpenAPI document and reference;
 - a notice when the index is older than `Ui:StaleAfterDays`.
 
+Not every owner wants a visitor to see how the server is built. The `Ui:Show*` settings in section
+7.2 hide parts of the page without turning it off: `Ui:ShowSearchApi` the search API section,
+`Ui:ShowSearchDetails` the keyword-only or hybrid mode with the embedding model and dimensions, and
+`Ui:ShowBuildDetails` the "Last build" section with the words, sections and languages from the same
+build statistics (the page keeps the page count and build date). `Ui:ApiReference` drops the `/docs`
+page and its links. Whatever is hidden on the page is also left out of `sitemap.xml`, `llms.txt`, the
+page's schema.org data and `/api/info`, so it is not findable by another route. Hiding is not access
+control: `/api/search` and `/openapi/v1.json` answer as before unless `SearchApi:Enabled` turns the
+first off, and search answers still say `keywordOnly` when they are.
+
 The page is rendered on the server, so search engines and link previews see all of it; script only
 powers the copy buttons. It carries a description, a canonical link, Open Graph tags and schema.org
 `WebAPI` data. `robots.txt` keeps crawlers out of the MCP endpoint and `/api/`, and points them at
 `sitemap.xml`, which lists `/` and `/docs/` with the index build date. Until an index is loaded the
 page answers `503` and asks not to be indexed. With `Ui:Enabled` off, `/` is a short text summary and
-`robots.txt` disallows everything.
+`robots.txt` disallows everything. With only `Ui:LandingPage` off, `/` is the same text summary,
+`sitemap.xml` lists `/docs/` alone and the other pages stay.
 
 `GET /llms.txt` follows the [llms.txt](https://llmstxt.org/) convention: the site name and
 description, a line on how to reach this server over MCP and HTTP, then every indexed page as a
@@ -1791,10 +1809,10 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 | `GET {SearchApi:Path}?q=&limit=` | Search API (default `/api/search`) | yes | no |
 | `GET /api/info` | Site, index, build statistics and endpoint URLs as JSON | no | no |
 | `GET /openapi/v1.json` | OpenAPI document for the search API and `/api/info` | no | no |
-| `GET /docs` | Interactive API reference, when `Ui:Enabled` | no | no |
+| `GET /docs` | Interactive API reference, when `Ui:Enabled` and `Ui:ApiReference` | no | no |
 | `GET /healthz` | Health and index status | no | no |
-| `GET /` | Landing page, when `Ui:Enabled`; otherwise a one-line text description | no | no |
-| `GET /playground` | Redirect to `/#test`, when `Ui:Enabled`; kept for old links and removed in a later release | no | no |
+| `GET /` | Landing page, when `Ui:Enabled` and `Ui:LandingPage`; otherwise a short text description | no | no |
+| `GET /playground` | Redirect to `/#test`, when the landing page is served; kept for old links and removed in a later release | no | no |
 | `GET /llms.txt` | The indexed pages as a Markdown list for language models, when `Ui:Enabled` | no | no |
 | `GET /robots.txt` | Crawler rules | no | no |
 | `GET /sitemap.xml` | Pages for search engines, when `Ui:Enabled` | no | no |

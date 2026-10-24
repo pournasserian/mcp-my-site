@@ -18,7 +18,10 @@
                 <a href="#connect">Connect</a>
                 <a href="#test">Test the server</a>
                 <a href="#content">What is indexed</a>
-                <a href="#build">Last build</a>
+                @if (Index.Store is not null)
+                {
+                    <a href="#build">Last build</a>
+                }
             }
             @if (Info.Endpoints.SearchApi is not null)
             {
@@ -94,7 +97,7 @@
 
                 <h3>Tools</h3>
                 <p><code>search</code> finds the best matching pages for a question or keywords, with a snippet each. <code>fetch</code> returns a whole page as Markdown. Both are read-only.</p>
-                @if (Index.KeywordOnly)
+                @if (Index.KeywordOnly == true)
                 {
                     <p>This index is keyword-only: searches match words, not meaning, and every result is marked <code>keywordOnly</code>.</p>
                 }
@@ -154,38 +157,45 @@
                 }
             </section>
 
-            <section id="build" aria-labelledby="build-title">
-                <h2 id="build-title">Last build</h2>
-                <dl class="facts">
-                    <dt>Built</dt><dd><time datetime="@Index.BuiltAt.ToString("o", CultureInfo.InvariantCulture)">@DateTime(Index.BuiltAt)</time></dd>
-                    @if (Index.LoadedAt is { } loaded)
-                    {
-                        <dt>Loaded by this server</dt><dd><time datetime="@loaded.ToString("o", CultureInfo.InvariantCulture)">@DateTime(loaded)</time></dd>
-                    }
-                    @if (Stats is not null)
-                    {
-                        <dt>Source</dt><dd>@(Stats.Source == "folder" ? "Folder of built HTML" : "Crawl of the live site")</dd>
-                        <dt>Duration</dt><dd>@Stats.DurationSeconds.ToString("0.#", CultureInfo.InvariantCulture) s</dd>
-                        <dt>Pages fetched</dt><dd>@Number(Stats.PagesFetched)</dd>
-                        <dt>Pages skipped</dt><dd>@Number(Stats.PagesSkippedNoIndex) noindex, @Number(Stats.PagesSkippedDuplicate) duplicate, @Number(Stats.PagesSkippedEmpty) empty</dd>
-                        <dt>Errors</dt><dd>@Number(Stats.Errors)</dd>
-                        @if (!Index.KeywordOnly)
+            @* With Ui:ShowBuildDetails off the model carries no store, and with Ui:ShowSearchDetails off no keyword-only flag. *@
+            @if (Index.Store is { } store)
+            {
+                <section id="build" aria-labelledby="build-title">
+                    <h2 id="build-title">Last build</h2>
+                    <dl class="facts">
+                        <dt>Built</dt><dd><time datetime="@Index.BuiltAt.ToString("o", CultureInfo.InvariantCulture)">@DateTime(Index.BuiltAt)</time></dd>
+                        @if (Index.LoadedAt is { } loaded)
                         {
-                            <dt>Embeddings</dt><dd>@Number(Stats.EmbeddingsGenerated) generated, @Number(Stats.EmbeddingsFromCache) from cache</dd>
+                            <dt>Loaded by this server</dt><dd><time datetime="@loaded.ToString("o", CultureInfo.InvariantCulture)">@DateTime(loaded)</time></dd>
                         }
-                    }
-                    <dt>Chunks</dt><dd>@Number(Index.ChunkCount)</dd>
-                    @if (Index.KeywordOnly)
-                    {
-                        <dt>Search</dt><dd>Keyword only, no embeddings</dd>
-                    }
-                    else
-                    {
-                        <dt>Embedding model</dt><dd>@Index.EmbeddingModel, @Index.EmbeddingDimensions dimensions</dd>
-                    }
-                    <dt>Store</dt><dd>@Index.Store, format @Index.FormatVersion@(Index.IndexerVersion is null ? string.Empty : $", indexer {Index.IndexerVersion}")</dd>
-                </dl>
-            </section>
+                        @if (Stats is not null)
+                        {
+                            <dt>Source</dt><dd>@(Stats.Source == "folder" ? "Folder of built HTML" : "Crawl of the live site")</dd>
+                            <dt>Duration</dt><dd>@Stats.DurationSeconds.ToString("0.#", CultureInfo.InvariantCulture) s</dd>
+                            <dt>Pages fetched</dt><dd>@Number(Stats.PagesFetched)</dd>
+                            <dt>Pages skipped</dt><dd>@Number(Stats.PagesSkippedNoIndex) noindex, @Number(Stats.PagesSkippedDuplicate) duplicate, @Number(Stats.PagesSkippedEmpty) empty</dd>
+                            <dt>Errors</dt><dd>@Number(Stats.Errors)</dd>
+                            @if (Index.KeywordOnly != true)
+                            {
+                                <dt>Embeddings</dt><dd>@Number(Stats.EmbeddingsGenerated) generated, @Number(Stats.EmbeddingsFromCache) from cache</dd>
+                            }
+                        }
+                        @if (Index.ChunkCount is { } chunks)
+                        {
+                            <dt>Chunks</dt><dd>@Number(chunks)</dd>
+                        }
+                        @if (Index.KeywordOnly == true)
+                        {
+                            <dt>Search</dt><dd>Keyword only, no embeddings</dd>
+                        }
+                        else if (Index.KeywordOnly == false)
+                        {
+                            <dt>Embedding model</dt><dd>@Index.EmbeddingModel, @Index.EmbeddingDimensions dimensions</dd>
+                        }
+                        <dt>Store</dt><dd>@store, format @Index.FormatVersion@(Index.IndexerVersion is null ? string.Empty : $", indexer {Index.IndexerVersion}")</dd>
+                    </dl>
+                </section>
+            }
         }
 
         @if (Info.Endpoints.SearchApi is not null)

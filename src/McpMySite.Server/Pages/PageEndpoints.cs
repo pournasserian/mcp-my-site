@@ -22,20 +22,23 @@ public static class PageEndpoints
             return;
         }
 
-        app.MapGet("/", (HttpRequest request, IndexHolder holder, IOptions<McpOptions> mcp, IOptions<SearchApiOptions> searchApi, IOptions<UiOptions> options) =>
+        if (ui.LandingPage)
         {
-            var baseUrl = SiteInfo.BaseUrl(request, options.Value);
-            var now = DateTimeOffset.UtcNow;
-            var info = SiteInfo.Create(holder, mcp.Value, searchApi.Value, options.Value, baseUrl, now);
-            return new RazorComponentResult<LandingPage>(new { Info = info, BaseUrl = baseUrl, Now = now })
+            app.MapGet("/", (HttpRequest request, IndexHolder holder, IOptions<McpOptions> mcp, IOptions<SearchApiOptions> searchApi, IOptions<UiOptions> options) =>
             {
-                // Crawlers retry a 503 later instead of indexing an empty page.
-                StatusCode = info.Index is null ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status200OK,
-            };
-        }).AllowHead().ExcludeFromDescription();
+                var baseUrl = SiteInfo.BaseUrl(request, options.Value);
+                var now = DateTimeOffset.UtcNow;
+                var info = SiteInfo.Create(holder, mcp.Value, searchApi.Value, options.Value, baseUrl, now);
+                return new RazorComponentResult<LandingPage>(new { Info = info, BaseUrl = baseUrl, Now = now })
+                {
+                    // Crawlers retry a 503 later instead of indexing an empty page.
+                    StatusCode = info.Index is null ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status200OK,
+                };
+            }).AllowHead().ExcludeFromDescription();
 
-        // The playground was removed in 0.3.0; old links land on the landing page's test section until a later release.
-        app.MapGet("/playground", () => Results.Redirect("/#test")).AllowHead().ExcludeFromDescription();
+            // The playground was removed in 0.3.0; old links land on the landing page's test section until a later release.
+            app.MapGet("/playground", () => Results.Redirect("/#test")).AllowHead().ExcludeFromDescription();
+        }
 
         app.MapGet("/llms.txt", async (HttpRequest request, IndexHolder holder, LlmsTxt llms, IOptions<McpOptions> mcp, IOptions<SearchApiOptions> searchApi, IOptions<UiOptions> options, CancellationToken cancellationToken) =>
         {
@@ -48,7 +51,7 @@ public static class PageEndpoints
         }).AllowHead().ExcludeFromDescription();
 
         app.MapGet("/sitemap.xml", (HttpRequest request, IndexHolder holder, IOptions<UiOptions> options) =>
-            Results.Text(Sitemap(SiteInfo.BaseUrl(request, options.Value), holder.Current?.Manifest.BuiltAt), "application/xml; charset=utf-8"))
+            Results.Text(Sitemap(SiteInfo.BaseUrl(request, options.Value), holder.Current?.Manifest.BuiltAt, options.Value), "application/xml; charset=utf-8"))
             .AllowHead()
             .ExcludeFromDescription();
     }
@@ -69,10 +72,21 @@ public static class PageEndpoints
             .ToString();
     }
 
-    internal static string Sitemap(string baseUrl, DateTimeOffset? builtAt)
+    internal static string Sitemap(string baseUrl, DateTimeOffset? builtAt, UiOptions ui)
     {
         var lastModified = builtAt?.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        var urls = new[] { baseUrl + "/", baseUrl + OpenApiSetup.ReferencePath + "/" }.Select(url => new XElement(SitemapNamespace + "url",
+        var pages = new List<string>();
+        if (ui.LandingPage)
+        {
+            pages.Add(baseUrl + "/");
+        }
+
+        if (ui.ApiReference)
+        {
+            pages.Add(baseUrl + OpenApiSetup.ReferencePath + "/");
+        }
+
+        var urls = pages.Select(url => new XElement(SitemapNamespace + "url",
             new XElement(SitemapNamespace + "loc", url),
             lastModified is null ? null : new XElement(SitemapNamespace + "lastmod", lastModified)));
         var document = new XDocument(new XDeclaration("1.0", "utf-8", null), new XElement(SitemapNamespace + "urlset", urls));

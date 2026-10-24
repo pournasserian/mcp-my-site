@@ -8,6 +8,13 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 
+- Five `Ui` switches hide parts of what visitors see while `Ui:Enabled` stays on, all default `true`:
+  `Ui:LandingPage` (serve `/` as the landing page and redirect browsers on `Mcp:Path` to it),
+  `Ui:ApiReference` (the Scalar page at `/docs`; the OpenAPI document stays), `Ui:ShowSearchApi`,
+  `Ui:ShowSearchDetails` (keyword-only or hybrid, embedding model and dimensions) and
+  `Ui:ShowBuildDetails` (the "Last build" section). What is hidden on the page is also left out of
+  `sitemap.xml`, `llms.txt`, the schema.org data and `/api/info`, where the matching fields are then
+  `null`. The startup line names what is hidden (#60).
 - The indexer skips pages that have not changed since the previous build. A page store next to the
   embedding cache keeps each page's `ETag`, `Last-Modified`, sitemap `lastmod`, extraction and links;
   an unchanged `lastmod` skips the request, and otherwise the crawler sends `If-None-Match` /

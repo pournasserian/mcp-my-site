@@ -141,9 +141,9 @@ app.UseCors();
 app.UseRateLimiter();
 
 // A person who opens the MCP URL in a browser lands on the landing page instead of the transport's bare 405. An MCP
-// client that opens an event stream asks for text/event-stream and is not touched; without the pages there is nowhere
-// to send a browser, so the transport answers as before.
-app.UseWhen(context => IsBrowserOnMcpEndpoint(context, mcpOptions.Path) && context.RequestServices.GetRequiredService<IOptions<UiOptions>>().Value.Enabled, branch => branch.Run(context =>
+// client that opens an event stream asks for text/event-stream and is not touched; without the landing page there is
+// nowhere to send a browser, so the transport answers as before.
+app.UseWhen(context => IsBrowserOnMcpEndpoint(context, mcpOptions.Path) && context.RequestServices.GetRequiredService<IOptions<UiOptions>>().Value is { Enabled: true, LandingPage: true }, branch => branch.Run(context =>
 {
     context.Response.Redirect(context.Request.PathBase.Add("/").Value!);
     return Task.CompletedTask;
@@ -209,14 +209,15 @@ app.MapGet("/healthz", (IndexHolder holder) =>
     return manifest is null ? Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable) : Results.Ok(body);
 }).AllowHead().ExcludeFromDescription().WithHttpLogging(HttpLoggingFields.None);
 
-// With the pages on, / is the landing page; without them it stays a short text summary.
-if (!uiOptions.Enabled)
+// With the landing page on, / is that page; without it / stays a short text summary.
+if (!uiOptions.Enabled || !uiOptions.LandingPage)
 {
     app.MapGet("/", (IndexHolder holder) =>
     {
         var manifest = holder.Current?.Manifest;
         var name = manifest?.SiteName ?? manifest?.SiteUrl ?? "no index loaded";
-        return Results.Text($"mcp-my-site for {name}\nMCP endpoint: {mcpOptions.Path}\nSearch API: {(searchApiOptions.Enabled ? searchApiOptions.Path + "?q=..." : "disabled")}\n");
+        var searchApiLine = uiOptions.ShowSearchApi ? $"Search API: {(searchApiOptions.Enabled ? searchApiOptions.Path + "?q=..." : "disabled")}\n" : string.Empty;
+        return Results.Text($"mcp-my-site for {name}\nMCP endpoint: {mcpOptions.Path}\n{searchApiLine}");
     }).AllowHead().ExcludeFromDescription();
 }
 
@@ -235,7 +236,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
         mcpOptions.Path,
         string.IsNullOrWhiteSpace(app.Services.GetRequiredService<IOptions<McpOptions>>().Value.ApiKey) ? "off" : "required",
         searchApiOptions.Enabled ? searchApiOptions.Path : "off",
-        uiOptions.Enabled ? "on" : "off",
+        PagesSummary(uiOptions),
         embeddingOptions.Enabled ? embeddingOptions.Endpoint : "off",
         telemetryExporter,
         telemetryOptions.Metrics,
@@ -246,6 +247,25 @@ app.Lifetime.ApplicationStarted.Register(() =>
 });
 
 app.Run();
+
+// "on", or "on" with the parts a Ui switch has hidden, so the startup line shows what a visitor gets.
+static string PagesSummary(UiOptions ui)
+{
+    if (!ui.Enabled)
+    {
+        return "off";
+    }
+
+    var hidden = new (bool Shown, string Name)[]
+    {
+        (ui.LandingPage, "landing page"),
+        (ui.ApiReference, "API reference"),
+        (ui.ShowSearchApi, "search API"),
+        (ui.ShowSearchDetails, "search details"),
+        (ui.ShowBuildDetails, "build details"),
+    }.Where(part => !part.Shown).Select(part => part.Name).ToList();
+    return hidden.Count == 0 ? "on" : $"on without {string.Join(", ", hidden)}";
+}
 
 static bool IsBrowserOnMcpEndpoint(HttpContext context, string mcpPath) =>
     (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method))
