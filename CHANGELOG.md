@@ -6,6 +6,8 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-29
+
 ### Added
 
 - The indexer writes `explore.json` next to the index: a signal profile that records, for each kind
@@ -165,7 +167,8 @@ First public release.
 - Dockerfile for the server and a CI workflow that builds and tests on Linux and Windows.
 - README, user guide and architecture documentation.
 
-[Unreleased]: https://github.com/pournasserian/mcp-my-site/compare/v0.3.0...master
+[Unreleased]: https://github.com/pournasserian/mcp-my-site/compare/v0.4.0...master
+[0.4.0]: https://github.com/pournasserian/mcp-my-site/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/pournasserian/mcp-my-site/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/pournasserian/mcp-my-site/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/pournasserian/mcp-my-site/compare/v0.2.0...v0.2.1
