@@ -17,6 +17,9 @@ All notable changes to this project are recorded here. The format follows
   count, click depth from the home page and link counts, the internal links between indexed pages
   as id pairs, and the internal link targets that are not in the index with the number of pages
   linking to each (#28).
+- `SearchApi:TrustedProxies` and `SearchApi:ClientIpHeader` let the search API's per-IP rate limit
+  trust a forwarded client IP from a site's own server-to-server caller, so its visitors no longer
+  share one rate-limit bucket. Opt-in and empty by default (#79).
 
 ## [0.3.0] - 2026-10-23
 
