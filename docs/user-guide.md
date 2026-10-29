@@ -770,6 +770,8 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:MaxLimit` | `20` | Upper bound for `limit`. |
 | `SearchApi:MaxOffset` | `100` | Upper bound for `offset`, on the search API and the MCP `search` tool. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
+| `SearchApi:TrustedProxies` | `[]` | IPs or CIDRs of a site's own server-to-server caller of the search API. When the connection is one of these, `SearchApi:ClientIpHeader` stands in for the rate limit's client IP. Empty never trusts it. Section 7.6. |
+| `SearchApi:ClientIpHeader` | | Header to read the client IP from when `SearchApi:TrustedProxies` matches, such as a header the caller sets itself. Ignored when `SearchApi:TrustedProxies` is empty. |
 | `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
 | `Ui:LandingPage` | `true` | Serve `/` as the landing page. Off, `/` is the short text summary and a browser opening `Mcp:Path` is no longer redirected to it. |
 | `Ui:ApiReference` | `true` | Serve the interactive API reference at `/docs`. The OpenAPI document is served either way. |
@@ -978,6 +980,17 @@ proxy such as a platform ingress sits between Cloudflare and the server. Set
 Being in Cloudflare's ranges shows that a request came through Cloudflare, not through your zone:
 anyone with a Cloudflare account can send traffic from those addresses. The consequence is a forged
 client address for rate limiting and telemetry, nothing more.
+
+**A site calling the search API server to server.** A site's own worker or backend can call
+`/api/search` directly to render a page without client-side JavaScript. Its own address is then the
+caller of record, so every one of its visitors shares that single rate-limit bucket. `SearchApi:TrustedProxies`
+(a list of IPs or CIDRs) and `SearchApi:ClientIpHeader` let that caller's own forwarded header stand
+in for the visitor instead, scoped to the search API's rate limit only — nothing else reads it. Both
+are empty by default, so an unconfigured server is unchanged. Pick a header the caller actually sets
+and that nothing earlier in the pipeline already consumes: not `X-Forwarded-For` when
+`RateLimiting:UseForwardedHeaders` is `true`, since that header is already rewritten into the
+connection's address before this setting is checked. A header name the caller controls, such as a
+custom one it adds itself, or `CF-Connecting-IP` when the caller is itself behind Cloudflare, works.
 
 ### 7.7 Health and status
 

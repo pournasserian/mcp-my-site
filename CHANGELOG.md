@@ -20,6 +20,16 @@ All notable changes to this project are recorded here. The format follows
 - `Maintainers`, a list of `{ Email, Name }` contacts, serves `/.well-known/mcpbundles.json` and
   `/.well-known/security.txt` (RFC 9116), independent of `Ui:Enabled`, so a directory such as MCP
   Bundles can verify a maintainer before publishing. Both routes stay 404 while it is empty (#83).
+- `SearchApi:TrustedProxies` and `SearchApi:ClientIpHeader` let the search API's per-IP rate limit
+  trust a forwarded client IP from a site's own server-to-server caller, so its visitors no longer
+  share one rate-limit bucket. Opt-in and empty by default (#79).
+
+### Fixed
+
+- The search API's and MCP `search` tool's `total` no longer grows as a reader pages forward. The
+  candidate pool each ranker is cut from used to grow with the request's own `offset` and `limit`,
+  so a later page pulled in more distinct pages and `total` rose with it; the pool is now a fixed
+  size that covers the largest supported page up front (#82).
 
 ## [0.3.0] - 2026-10-23
 
