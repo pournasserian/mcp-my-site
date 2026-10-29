@@ -9,13 +9,27 @@ public static class PageEndpoints
 {
     private static readonly XNamespace SitemapNamespace = "http://www.sitemaps.org/schemas/sitemap/0.9";
 
-    public static void MapPages(this WebApplication app, UiOptions ui)
+    public static void MapPages(this WebApplication app, UiOptions ui, MaintainersOptions maintainers)
     {
         // robots.txt is served either way, so a server without pages tells crawlers to stay out entirely.
         app.MapGet("/robots.txt", (HttpRequest request, IOptions<UiOptions> options, IOptions<McpOptions> mcp) =>
             Results.Text(RobotsTxt(SiteInfo.BaseUrl(request, options.Value), options.Value.Enabled, mcp.Value.Path), "text/plain; charset=utf-8"))
             .AllowHead()
             .ExcludeFromDescription();
+
+        // Independent of Ui:Enabled, so a server with the pages off can still be claimed on a directory. Mapped
+        // only when maintainers are configured, so an unconfigured server keeps answering 404 as before.
+        if (maintainers.Count > 0)
+        {
+            app.MapGet("/.well-known/mcpbundles.json", () => Results.Json(McpBundlesJson(maintainers)))
+                .AllowHead()
+                .ExcludeFromDescription();
+
+            app.MapGet("/.well-known/security.txt", (HttpRequest request, IOptions<UiOptions> options) =>
+                Results.Text(SecurityTxt(SiteInfo.BaseUrl(request, options.Value), maintainers, DateTimeOffset.UtcNow), "text/plain; charset=utf-8"))
+                .AllowHead()
+                .ExcludeFromDescription();
+        }
 
         if (!ui.Enabled)
         {
@@ -99,4 +113,28 @@ public static class PageEndpoints
         // XDocument.ToString leaves the declaration out.
         return document.Declaration + "\n" + document.Root;
     }
+
+    internal static MaintainersDocument McpBundlesJson(IReadOnlyList<MaintainerOptions> maintainers) =>
+        new([.. maintainers.Select(m => new MaintainerContact(m.Email, m.Name))]);
+
+    internal static string SecurityTxt(string baseUrl, IReadOnlyList<MaintainerOptions> maintainers, DateTimeOffset now)
+    {
+        var builder = new StringBuilder();
+        foreach (var maintainer in maintainers)
+        {
+            builder.Append($"Contact: mailto:{maintainer.Email}\n");
+        }
+
+        // RFC 9116 requires Expires; a year out is far enough to not need rotation on every deployment.
+        builder.Append($"Expires: {now.AddYears(1).UtcDateTime:yyyy-MM-dd'T'HH:mm:ss'Z'}\n");
+        builder.Append("Preferred-Languages: en\n");
+        builder.Append($"Canonical: {baseUrl}/.well-known/security.txt\n");
+        return builder.ToString();
+    }
 }
+
+/// <summary>The body of /.well-known/mcpbundles.json.</summary>
+public sealed record MaintainersDocument(IReadOnlyList<MaintainerContact> Maintainers);
+
+/// <param name="Name">Omitted from the JSON when not set.</param>
+public sealed record MaintainerContact(string Email, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Name);

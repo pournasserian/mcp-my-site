@@ -17,6 +17,9 @@ All notable changes to this project are recorded here. The format follows
   count, click depth from the home page and link counts, the internal links between indexed pages
   as id pairs, and the internal link targets that are not in the index with the number of pages
   linking to each (#28).
+- `Maintainers`, a list of `{ Email, Name }` contacts, serves `/.well-known/mcpbundles.json` and
+  `/.well-known/security.txt` (RFC 9116), independent of `Ui:Enabled`, so a directory such as MCP
+  Bundles can verify a maintainer before publishing. Both routes stay 404 while it is empty (#83).
 
 ## [0.3.0] - 2026-10-23
 
