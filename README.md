@@ -80,6 +80,9 @@ Cursor, Claude Desktop) are in the [user guide](docs/user-guide.md#4-quick-start
 - **Discoverable.** `/mcp/server-card` serves the MCP server card (SEP-2127) with the endpoint, the
   protocol versions and whether a key is needed, and `/llms.txt` lists the indexed pages for
   language models.
+- **Listable in directories.** Set `Maintainers` and the server serves `/.well-known/mcpbundles.json`
+  and `/.well-known/security.txt` so a directory such as MCP Bundles can verify a maintainer before
+  publishing ([user guide](docs/user-guide.md#711-being-listed-in-directories)).
 - **Search API for your own site.** `GET /api/search` with CORS, rate limiting, offset paging, an
   OpenAPI 3.1 document and an interactive reference. Drop-in snippet for a search box in the
   [user guide](docs/user-guide.md#9-adding-a-search-box-to-your-site).

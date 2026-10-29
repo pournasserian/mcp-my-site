@@ -10,11 +10,13 @@ services.Configure<TelemetryOptions>(configuration.GetSection(TelemetryOptions.S
 services.Configure<CloudflareOptions>(configuration.GetSection(CloudflareOptions.SectionName));
 services.Configure<UiOptions>(configuration.GetSection(UiOptions.SectionName));
 services.Configure<EmbeddingOptions>(configuration.GetSection(EmbeddingOptions.SectionName));
+services.Configure<MaintainersOptions>(configuration.GetSection(MaintainersOptions.SectionName));
 
 var mcpOptions = configuration.GetSection(McpOptions.SectionName).Get<McpOptions>() ?? new McpOptions();
 var searchApiOptions = configuration.GetSection(SearchApiOptions.SectionName).Get<SearchApiOptions>() ?? new SearchApiOptions();
 var rateLimitOptions = configuration.GetSection(RateLimitOptions.SectionName).Get<RateLimitOptions>() ?? new RateLimitOptions();
 var uiOptions = configuration.GetSection(UiOptions.SectionName).Get<UiOptions>() ?? new UiOptions();
+var maintainersOptions = configuration.GetSection(MaintainersOptions.SectionName).Get<MaintainersOptions>() ?? new MaintainersOptions();
 
 // Registered before the index refresh service so that exporters are running when it writes its first log lines.
 var telemetryExporter = builder.AddSiteTelemetry();
@@ -193,7 +195,7 @@ if (searchApiOptions.Enabled)
 
 app.MapSiteOpenApi(uiOptions);
 app.MapInfoApi();
-app.MapPages(uiOptions);
+app.MapPages(uiOptions, maintainersOptions);
 
 app.MapGet("/healthz", (IndexHolder holder) =>
 {

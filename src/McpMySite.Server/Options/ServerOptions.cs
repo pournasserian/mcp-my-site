@@ -105,6 +105,25 @@ public sealed class UiOptions
     public string[] FrameAncestors { get; set; } = [];
 }
 
+/// <summary>One maintainer contact, published at /.well-known/mcpbundles.json and /.well-known/security.txt.</summary>
+public sealed class MaintainerOptions
+{
+    public string Email { get; set; } = "";
+
+    public string? Name { get; set; }
+}
+
+/// <summary>
+/// Maintainer contacts a directory can use to verify this server, served at /.well-known/mcpbundles.json and
+/// /.well-known/security.txt. Both routes answer 404 while this is empty. A list itself, not a property holding
+/// one, so binding the section directly gives Maintainers__0__Email as the environment variable for the first
+/// entry's email.
+/// </summary>
+public sealed class MaintainersOptions : List<MaintainerOptions>
+{
+    public const string SectionName = "Maintainers";
+}
+
 public sealed class RateLimitOptions
 {
     public const string SectionName = "RateLimiting";
