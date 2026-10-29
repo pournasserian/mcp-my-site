@@ -779,6 +779,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `Ui:PublicUrl` | | Public base URL of the server, such as `https://mcp.example.com`, used for canonical links, the sitemap and the connection snippets. Empty takes it from each request. Set it when the server sits behind a proxy that changes the host. |
 | `Ui:StaleAfterDays` | `30` | The landing page and `/api/info` flag the index as stale when it is older than this. `0` turns the flag off. |
 | `Ui:FrameAncestors` | `[]` | Origins allowed to embed the pages in a frame, as CSP `frame-ancestors` sources (`https://www.example.com`, `'self'`). Empty denies framing everywhere. Section 12. |
+| `Maintainers` | `[]` | Maintainer contacts (`Email`, optional `Name`) published for directories to verify, independent of `Ui:Enabled`. Empty serves neither route. Section 7.11. |
 | `RateLimiting:PermitPerMinute` | `60` | Requests per client IP per minute, shared across the MCP endpoint and the search API. Excess requests get `429`. |
 | `RateLimiting:UseForwardedHeaders` | `true` | Take the client IP from `X-Forwarded-For`, as set by most reverse proxies and platform ingresses. Set `false` when clients reach Kestrel directly. |
 | `Cloudflare:TrustConnectingIp` | `true` | Behind Cloudflare, take the client IP from `CF-Connecting-IP` and tag requests with `CF-Ray` and `CF-IPCountry`. Only believed when the connection comes from `Cloudflare:TrustedNetworks`, so it is inert anywhere else. Section 7.6. |
@@ -1258,6 +1259,29 @@ traces
 | project timestamp, cloud_RoleName, category = tostring(customDimensions.CategoryName), message
 | order by timestamp desc
 ```
+
+### 7.11 Being listed in directories
+
+A directory that lists MCP servers, such as [MCP Bundles](https://www.mcpbundles.com/docs/how-to/publishing-mcp-servers),
+wants a maintainer contact it can verify before letting anyone claim a listing. Set `Maintainers`
+to one or more `{ Email, Name }` entries (`Name` optional) and the server serves both files it
+looks for, independent of `Ui:Enabled`:
+
+```json
+"Maintainers": [
+  { "Email": "owner@example.com" },
+  { "Email": "ops@example.com", "Name": "Ops Team" }
+]
+```
+
+(`Maintainers__0__Email` as an environment variable.) `GET /.well-known/mcpbundles.json` lists them
+as `{ "maintainers": [ { "email": "...", "name": "..." } ] }` in the configured order, `name` left
+out per entry when not set. `GET /.well-known/security.txt` follows
+[RFC 9116](https://www.rfc-editor.org/rfc/rfc9116): one `Contact: mailto:` line per maintainer, an
+`Expires:` line a year out, `Preferred-Languages: en` and a `Canonical:` line pointing at itself
+under `Ui:PublicUrl`. With `Maintainers` empty, both routes stay `404`, as before this setting
+existed. The addresses are configuration, not query text: they are kept out of telemetry and off
+the landing page.
 
 ## 8. Connecting MCP clients
 
@@ -1838,6 +1862,8 @@ Chunk record: `id`, `pageId`, `ordinal`, `headingPath[]`, `text`. Chunk `id` equ
 | `GET /llms.txt` | The indexed pages as a Markdown list for language models, when `Ui:Enabled` | no | no |
 | `GET /robots.txt` | Crawler rules | no | no |
 | `GET /sitemap.xml` | Pages for search engines, when `Ui:Enabled` | no | no |
+| `GET /.well-known/mcpbundles.json` | Maintainer contacts as JSON, when `Maintainers` is configured | no | no |
+| `GET /.well-known/security.txt` | Maintainer contacts as RFC 9116 `security.txt`, when `Maintainers` is configured | no | no |
 
 ### 16.4 Glossary
 
