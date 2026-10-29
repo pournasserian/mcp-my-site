@@ -34,30 +34,45 @@ public static class HybridRanker
     }
 
     /// <summary>
-    /// Keeps the best chunk per page, skips the first <see cref="SearchRequest.Offset"/> pages and builds the hit
-    /// list, counting every distinct page in <paramref name="fused"/> for the total.
+    /// Keeps the best chunk per page, skips the first <see cref="SearchRequest.Offset"/> pages and picks the chunks
+    /// that become the page of hits, counting every distinct page in <paramref name="fused"/> for the total. Only
+    /// needs each candidate's page, so a store can load chunk text for the selected few alone.
     /// </summary>
-    public static SearchResponse ToPageHits(
+    public static (List<(int ChunkId, double Score)> Selected, int Total) SelectPage(
         IReadOnlyList<(int ChunkId, double Score)> fused,
+        Func<int, int> pageIdLookup,
+        SearchRequest request)
+    {
+        var selected = new List<(int ChunkId, double Score)>();
+        var seenPages = new HashSet<int>();
+        foreach (var candidate in fused)
+        {
+            if (!seenPages.Add(pageIdLookup(candidate.ChunkId)))
+            {
+                continue;
+            }
+
+            if (seenPages.Count > request.Offset && selected.Count < request.Limit)
+            {
+                selected.Add(candidate);
+            }
+        }
+
+        return (selected, seenPages.Count);
+    }
+
+    /// <summary>Builds the response for the chunks <see cref="SelectPage"/> picked, with snippets from their text.</summary>
+    public static SearchResponse ToResponse(
+        IReadOnlyList<(int ChunkId, double Score)> selected,
+        int total,
         Func<int, ChunkCandidate> chunkLookup,
         Func<int, PageDocument> pageLookup,
         SearchRequest request)
     {
-        var hits = new List<SearchHit>();
-        var seenPages = new HashSet<int>();
-        foreach (var (chunkId, score) in fused)
+        var hits = new List<SearchHit>(selected.Count);
+        foreach (var (chunkId, score) in selected)
         {
             var chunk = chunkLookup(chunkId);
-            if (!seenPages.Add(chunk.PageId))
-            {
-                continue;
-            }
-
-            if (seenPages.Count <= request.Offset || hits.Count >= request.Limit)
-            {
-                continue;
-            }
-
             var page = pageLookup(chunk.PageId);
             var (plain, highlighted) = Snippets.Build(chunk.Text, request.Query);
             hits.Add(new SearchHit
@@ -77,8 +92,19 @@ public static class HybridRanker
         {
             Hits = hits,
             KeywordOnly = request.QueryVector is null,
-            Total = seenPages.Count,
-            HasMore = request.Offset + hits.Count < seenPages.Count,
+            Total = total,
+            HasMore = request.Offset + hits.Count < total,
         };
+    }
+
+    /// <summary><see cref="SelectPage"/> and <see cref="ToResponse"/> in one step, for a store with every chunk in memory.</summary>
+    public static SearchResponse ToPageHits(
+        IReadOnlyList<(int ChunkId, double Score)> fused,
+        Func<int, ChunkCandidate> chunkLookup,
+        Func<int, PageDocument> pageLookup,
+        SearchRequest request)
+    {
+        var (selected, total) = SelectPage(fused, id => chunkLookup(id).PageId, request);
+        return ToResponse(selected, total, chunkLookup, pageLookup, request);
     }
 }

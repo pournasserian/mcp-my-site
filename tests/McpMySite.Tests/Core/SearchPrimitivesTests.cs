@@ -104,11 +104,23 @@ public class HybridRankerTests
     }
 
     [Fact]
-    public void CandidateCountGrowsWithTheRequestedPage()
+    public void CandidateCountDoesNotDependOnOffsetOrLimit()
     {
-        Assert.Equal(50, new SearchRequest { Query = "x", Limit = 10 }.CandidateCount);
-        Assert.Equal(100, new SearchRequest { Query = "x", Limit = 20 }.CandidateCount);
-        Assert.Equal(100, new SearchRequest { Query = "x", Limit = 10, Offset = 10 }.CandidateCount);
+        // Fixed per query: a pool that grew with Offset used to make Total grow as the reader paged forward (#82).
+        var baseline = new SearchRequest { Query = "x" }.CandidateCount;
+
+        Assert.Equal(SearchRequest.DefaultCandidateCount, baseline);
+        Assert.Equal(baseline, new SearchRequest { Query = "x", Limit = 20 }.CandidateCount);
+        Assert.Equal(baseline, new SearchRequest { Query = "x", Limit = 10, Offset = 10 }.CandidateCount);
+        Assert.Equal(baseline, new SearchRequest { Query = "x", Limit = 10, Offset = 100 }.CandidateCount);
+    }
+
+    [Fact]
+    public void CandidateCountForCoversTheDeepestConfiguredPage()
+    {
+        Assert.Equal(SearchRequest.DefaultCandidateCount, SearchRequest.CandidateCountFor(100, 20));
+        Assert.Equal(SearchRequest.DefaultCandidateCount, SearchRequest.CandidateCountFor(10, 5));
+        Assert.Equal((1000 + 20) * 5, SearchRequest.CandidateCountFor(1000, 20));
     }
 }
 

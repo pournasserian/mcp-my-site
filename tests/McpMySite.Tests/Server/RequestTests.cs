@@ -142,12 +142,12 @@ public class CloudflareClientIpMiddlewareTests
     }
 
     [Fact]
-    public void RangeThatIsNotCidrFailsAtStartup()
+    public void RangeThatIsNeitherCidrNorAFullAddressFailsAtStartup()
     {
         var error = Assert.Throws<InvalidOperationException>(() =>
-            new CloudflareClientIpMiddleware(_ => Task.CompletedTask, Options.Create(new CloudflareOptions { TrustedNetworks = ["173.245.48.0"] })));
+            new CloudflareClientIpMiddleware(_ => Task.CompletedTask, Options.Create(new CloudflareOptions { TrustedNetworks = ["173.245.48"] })));
 
-        Assert.Contains("173.245.48.0", error.Message);
+        Assert.Contains("173.245.48", error.Message);
     }
 }
 
@@ -244,6 +244,198 @@ public class CloudflareServerTests
 
         // The second request did not come from Cloudflare, so its headers are not believed and not recorded.
         Assert.DoesNotContain(spans, s => s.GetTagItem("cloudflare.ray_id") as string == "ffffffffffffffff-SIN");
+    }
+}
+
+public class ClientIpResolverTests
+{
+    private static HttpContext Context(string? peer, string? header = null, string? headerValue = null)
+    {
+        var context = new DefaultHttpContext();
+        context.Connection.RemoteIpAddress = peer is null ? null : IPAddress.Parse(peer);
+        if (header is not null && headerValue is not null)
+        {
+            context.Request.Headers[header] = headerValue;
+        }
+
+        return context;
+    }
+
+    private static ClientIpResolver Resolver(string[] trustedProxies, string? clientIpHeader = "X-Forwarded-For") =>
+        new(Options.Create(new SearchApiOptions { TrustedProxies = trustedProxies, ClientIpHeader = clientIpHeader }));
+
+    [Fact]
+    public void RequestFromATrustedProxyIsPartitionedByTheForwardedAddress()
+    {
+        var resolver = Resolver(["10.0.0.0/8"]);
+        var context = Context("10.1.2.3", "X-Forwarded-For", "203.0.113.9");
+
+        Assert.Equal("203.0.113.9", resolver.Resolve(context));
+    }
+
+    [Fact]
+    public void AForwardedForChainKeepsOnlyTheFirstAddress()
+    {
+        var resolver = Resolver(["10.0.0.0/8"]);
+        var context = Context("10.1.2.3", "X-Forwarded-For", "203.0.113.9, 198.51.100.1");
+
+        Assert.Equal("203.0.113.9", resolver.Resolve(context));
+    }
+
+    [Fact]
+    public void RequestNotFromATrustedProxyKeepsItsOwnAddress()
+    {
+        var resolver = Resolver(["10.0.0.0/8"]);
+        var context = Context("198.51.100.7", "X-Forwarded-For", "203.0.113.9");
+
+        Assert.Equal("198.51.100.7", resolver.Resolve(context));
+    }
+
+    [Fact]
+    public void NoTrustedProxiesConfiguredKeepsTheRawAddressEvenWithTheHeaderPresent()
+    {
+        var resolver = Resolver([]);
+        var context = Context("10.1.2.3", "X-Forwarded-For", "203.0.113.9");
+
+        Assert.Equal("10.1.2.3", resolver.Resolve(context));
+    }
+
+    [Fact]
+    public void NoClientIpHeaderConfiguredKeepsTheRawAddress()
+    {
+        var resolver = Resolver(["10.0.0.0/8"], clientIpHeader: null);
+        var context = Context("10.1.2.3", "X-Forwarded-For", "203.0.113.9");
+
+        Assert.Equal("10.1.2.3", resolver.Resolve(context));
+    }
+
+    [Theory]
+    [InlineData("not-an-ip")]
+    [InlineData("")]
+    [InlineData("1")]
+    [InlineData("203.0.113")]
+    public void MalformedForwardedHeaderFallsBackToTheRawAddress(string value)
+    {
+        var resolver = Resolver(["10.0.0.0/8"]);
+        var context = Context("10.1.2.3", "X-Forwarded-For", value);
+
+        Assert.Equal("10.1.2.3", resolver.Resolve(context));
+    }
+
+    [Fact]
+    public void RepeatedHeaderIsNotBelieved()
+    {
+        var resolver = Resolver(["10.0.0.0/8"]);
+        var context = Context("10.1.2.3");
+        context.Request.Headers["X-Forwarded-For"] = new Microsoft.Extensions.Primitives.StringValues(["203.0.113.9", "203.0.113.10"]);
+
+        Assert.Equal("10.1.2.3", resolver.Resolve(context));
+    }
+
+    [Fact]
+    public void ConnectionWithoutAnAddressIsReportedAsUnknown()
+    {
+        var resolver = Resolver(["10.0.0.0/8"]);
+        var context = Context(null, "X-Forwarded-For", "203.0.113.9");
+
+        Assert.Equal("unknown", resolver.Resolve(context));
+    }
+
+    [Fact]
+    public void ASingleAddressTrustsExactlyThatPeer()
+    {
+        var resolver = Resolver(["10.1.2.3"]);
+
+        Assert.Equal("203.0.113.9", resolver.Resolve(Context("10.1.2.3", "X-Forwarded-For", "203.0.113.9")));
+        Assert.Equal("10.1.2.4", resolver.Resolve(Context("10.1.2.4", "X-Forwarded-For", "203.0.113.9")));
+    }
+
+    [Fact]
+    public void EntryThatIsNeitherAnAddressNorACidrFailsAtStartup()
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => Resolver(["not-an-address"]));
+
+        Assert.Contains("not-an-address", error.Message);
+    }
+}
+
+public class SearchApiTrustedProxyServerTests
+{
+    private const string Proxy = "10.0.0.1";
+
+    private static async Task<(WebApplicationFactory<server::Program> Factory, HttpClient Client)> StartAsync(Dictionary<string, string?> settings) =>
+        await LoggedServer.StartAsync(new CapturedLogs(), settings, configureServices: services => services.AddTransient<IStartupFilter, TestPeerStartupFilter>());
+
+    // A header distinct from X-Forwarded-For: RateLimiting:UseForwardedHeaders (on by default) already consumes
+    // that one for the platform's own reverse proxy, before this policy's partition key is ever computed.
+    private const string ClientIpHeader = "CF-Connecting-IP";
+
+    private static HttpRequestMessage Search(string peer, string? clientIp = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/search?q=rockets");
+        request.Headers.Add(TestPeerStartupFilter.Header, peer);
+        if (clientIp is not null)
+        {
+            request.Headers.Add(ClientIpHeader, clientIp);
+        }
+
+        return request;
+    }
+
+    [Fact]
+    public async Task RateLimitCountsEachVisitorBehindTheTrustedProxySeparately()
+    {
+        var (factory, client) = await StartAsync(new()
+        {
+            ["RateLimiting:PermitPerMinute"] = "1",
+            ["SearchApi:TrustedProxies:0"] = "10.0.0.0/8",
+            ["SearchApi:ClientIpHeader"] = ClientIpHeader,
+        });
+        using (factory)
+        using (client)
+        {
+            // Everyone arrives from the same proxy address; each visitor still gets their own window.
+            Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(Search(Proxy, "203.0.113.1"))).StatusCode);
+            Assert.Equal(HttpStatusCode.TooManyRequests, (await client.SendAsync(Search(Proxy, "203.0.113.1"))).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(Search(Proxy, "203.0.113.2"))).StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task ForgedHeaderFromOutsideTheTrustedProxyDoesNotEscapeTheRateLimit()
+    {
+        var (factory, client) = await StartAsync(new()
+        {
+            ["RateLimiting:PermitPerMinute"] = "1",
+            ["SearchApi:TrustedProxies:0"] = "10.0.0.0/8",
+            ["SearchApi:ClientIpHeader"] = ClientIpHeader,
+        });
+        using (factory)
+        using (client)
+        {
+            Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(Search("198.51.100.7", "203.0.113.1"))).StatusCode);
+            Assert.Equal(HttpStatusCode.TooManyRequests, (await client.SendAsync(Search("198.51.100.7", "203.0.113.2"))).StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task EntryThatIsNotAnAddressStopsTheServerStarting()
+    {
+        var error = await Assert.ThrowsAnyAsync<Exception>(() => StartAsync(new() { ["SearchApi:TrustedProxies:0"] = "not-an-address" }));
+
+        Assert.Contains("SearchApi:TrustedProxies entry 'not-an-address'", error.ToString());
+    }
+
+    [Fact]
+    public async Task UnconfiguredByDefaultPartitionsByTheRawAddressEvenWithTheHeaderPresent()
+    {
+        var (factory, client) = await StartAsync(new() { ["RateLimiting:PermitPerMinute"] = "1" });
+        using (factory)
+        using (client)
+        {
+            Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(Search(Proxy, "203.0.113.1"))).StatusCode);
+            Assert.Equal(HttpStatusCode.TooManyRequests, (await client.SendAsync(Search(Proxy, "203.0.113.2"))).StatusCode);
+        }
     }
 }
 

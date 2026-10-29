@@ -50,6 +50,22 @@ public sealed class SearchApiOptions
     public int MaxOffset { get; set; } = 100;
 
     public int MaxQueryLength { get; set; } = 500;
+
+    /// <summary>
+    /// Trust a forwarded client IP for the per-IP rate limit when the request's own remote address is one of
+    /// these IPs or CIDR ranges — for a site that calls this API server-to-server (such as a Cloudflare Worker
+    /// rendering its own search page), so its visitors don't share the caller's single rate-limit bucket. Empty
+    /// never trusts a forwarded header here, independent of <see cref="CloudflareOptions.TrustedNetworks"/>.
+    /// </summary>
+    public string[] TrustedProxies { get; set; } = [];
+
+    /// <summary>
+    /// Header to read the client IP from when the request comes from a <see cref="TrustedProxies"/> address: one
+    /// the caller sets itself, such as X-Visitor-IP. Not X-Forwarded-For or CF-Connecting-IP, which the forwarded
+    /// headers and Cloudflare middlewares have already consumed by the time this is read. Ignored when
+    /// <see cref="TrustedProxies"/> is empty.
+    /// </summary>
+    public string? ClientIpHeader { get; set; }
 }
 
 public sealed class UiOptions
@@ -89,6 +105,37 @@ public sealed class UiOptions
 
     /// <summary>Origins allowed to embed the pages in a frame, as CSP frame-ancestors sources. Empty denies framing everywhere.</summary>
     public string[] FrameAncestors { get; set; } = [];
+}
+
+/// <summary>One maintainer contact, published at /.well-known/mcpbundles.json and /.well-known/security.txt.</summary>
+public sealed class MaintainerOptions
+{
+    public string Email { get; set; } = "";
+
+    public string? Name { get; set; }
+}
+
+/// <summary>
+/// Maintainer contacts a directory can use to verify this server, served at /.well-known/mcpbundles.json and
+/// /.well-known/security.txt. Both routes answer 404 while this is empty. A list itself, not a property holding
+/// one, so binding the section directly gives Maintainers__0__Email as the environment variable for the first
+/// entry's email.
+/// </summary>
+public sealed class MaintainersOptions : List<MaintainerOptions>
+{
+    public const string SectionName = "Maintainers";
+
+    /// <summary>An entry without an email would publish an empty mailto: contact; refused at startup instead.</summary>
+    public void Validate()
+    {
+        for (var i = 0; i < Count; i++)
+        {
+            if (string.IsNullOrWhiteSpace(this[i].Email))
+            {
+                throw new InvalidOperationException($"{SectionName}:{i}:Email is required; every maintainer needs an email address.");
+            }
+        }
+    }
 }
 
 public sealed class RateLimitOptions

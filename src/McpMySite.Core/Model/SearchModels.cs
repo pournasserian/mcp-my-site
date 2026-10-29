@@ -2,7 +2,17 @@ namespace McpMySite.Core.Model;
 
 public sealed record SearchRequest
 {
-    private const int MinCandidateCount = 50;
+    /// <summary>
+    /// The pool each ranker contributes when the caller sets no <see cref="CandidateCount"/>: enough for an offset
+    /// of 100 plus a page of 20, the server's default limits.
+    /// </summary>
+    public const int DefaultCandidateCount = (100 + 20) * 5;
+
+    /// <summary>
+    /// The pool that covers the deepest page a caller may ask for: five chunks per page position up to
+    /// <paramref name="maxOffset"/> plus <paramref name="maxLimit"/>, never below <see cref="DefaultCandidateCount"/>.
+    /// </summary>
+    public static int CandidateCountFor(int maxOffset, int maxLimit) => Math.Max(DefaultCandidateCount, (maxOffset + maxLimit) * 5);
 
     public required string Query { get; init; }
 
@@ -16,10 +26,12 @@ public sealed record SearchRequest
     public int Offset { get; init; }
 
     /// <summary>
-    /// How many chunks each ranker contributes before merging: at least 50, and five per requested page position,
-    /// so every page of one query is cut from the same ranking.
+    /// How many chunks each ranker contributes before merging. Independent of <see cref="Offset"/> and
+    /// <see cref="Limit"/>: a pool sized for the current page used to pull in more distinct pages on a later page,
+    /// so <see cref="SearchResponse.Total"/> rose as the reader paged forward instead of describing the query. The
+    /// server sets it from its configured limits with <see cref="CandidateCountFor"/>.
     /// </summary>
-    public int CandidateCount => Math.Max(MinCandidateCount, (Offset + Limit) * 5);
+    public int CandidateCount { get; init; } = DefaultCandidateCount;
 }
 
 public sealed record SearchHit

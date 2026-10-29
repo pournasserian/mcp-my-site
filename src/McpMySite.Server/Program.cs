@@ -15,6 +15,8 @@ var mcpOptions = configuration.GetSection(McpOptions.SectionName).Get<McpOptions
 var searchApiOptions = configuration.GetSection(SearchApiOptions.SectionName).Get<SearchApiOptions>() ?? new SearchApiOptions();
 var rateLimitOptions = configuration.GetSection(RateLimitOptions.SectionName).Get<RateLimitOptions>() ?? new RateLimitOptions();
 var uiOptions = configuration.GetSection(UiOptions.SectionName).Get<UiOptions>() ?? new UiOptions();
+var maintainersOptions = configuration.GetSection(MaintainersOptions.SectionName).Get<MaintainersOptions>() ?? new MaintainersOptions();
+maintainersOptions.Validate();
 
 // Registered before the index refresh service so that exporters are running when it writes its first log lines.
 var telemetryExporter = builder.AddSiteTelemetry();
@@ -29,6 +31,7 @@ services.AddRazorComponents();
 services.AddSingleton<LlmsTxt>();
 services.AddSingleton(TimeProvider.System);
 services.AddSingleton<VisitorSalt>();
+services.AddSingleton<ClientIpResolver>();
 
 // Numbers are plain JSON numbers; the web default also accepts strings, which would make every OpenAPI number "integer or string".
 services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
@@ -84,8 +87,9 @@ services.AddRateLimiter(options =>
     options.AddPolicy(SearchEndpoints.RateLimitPolicy, context =>
     {
         var permit = context.RequestServices.GetRequiredService<IOptions<RateLimitOptions>>().Value.PermitPerMinute;
+        var clientIp = context.RequestServices.GetRequiredService<ClientIpResolver>().Resolve(context);
         return RateLimitPartition.GetFixedWindowLimiter(
-            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            clientIp,
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = Math.Max(1, permit),
@@ -121,6 +125,9 @@ services.AddOptions<HttpLoggingOptions>().Configure<IOptions<TelemetryOptions>>(
 
 var app = builder.Build();
 app.FlushTelemetryOnShutdown();
+
+// Built once here so a mistyped SearchApi:TrustedProxies entry fails startup, not the first rate-limited request.
+app.Services.GetRequiredService<ClientIpResolver>();
 
 app.UseHttpLogging();
 
@@ -191,7 +198,7 @@ if (searchApiOptions.Enabled)
 
 app.MapSiteOpenApi(uiOptions);
 app.MapInfoApi();
-app.MapPages(uiOptions);
+app.MapPages(uiOptions, maintainersOptions);
 
 app.MapGet("/healthz", (IndexHolder holder) =>
 {
