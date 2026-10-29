@@ -50,6 +50,20 @@ public sealed class SearchApiOptions
     public int MaxOffset { get; set; } = 100;
 
     public int MaxQueryLength { get; set; } = 500;
+
+    /// <summary>
+    /// Trust a forwarded client IP for the per-IP rate limit when the request's own remote address is one of
+    /// these IPs or CIDR ranges — for a site that calls this API server-to-server (such as a Cloudflare Worker
+    /// rendering its own search page), so its visitors don't share the caller's single rate-limit bucket. Empty
+    /// never trusts a forwarded header here, independent of <see cref="CloudflareOptions.TrustedNetworks"/>.
+    /// </summary>
+    public string[] TrustedProxies { get; set; } = [];
+
+    /// <summary>
+    /// Header to read the client IP from when the request comes from a <see cref="TrustedProxies"/> address, such
+    /// as X-Forwarded-For or CF-Connecting-IP. Ignored when <see cref="TrustedProxies"/> is empty.
+    /// </summary>
+    public string? ClientIpHeader { get; set; }
 }
 
 public sealed class UiOptions

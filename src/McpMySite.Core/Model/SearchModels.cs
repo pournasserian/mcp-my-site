@@ -2,7 +2,11 @@ namespace McpMySite.Core.Model;
 
 public sealed record SearchRequest
 {
-    private const int MinCandidateCount = 50;
+    // Fixed, not grown from this request's own Offset and Limit: a pool sized for the current page used to pull
+    // in more distinct pages on a later page, so Total (the pages found in the pool) rose as the reader paged
+    // forward instead of describing the query. Sized for the API's largest supported page (SearchApi:MaxOffset
+    // 100 plus SearchApi:MaxLimit 20) so paging that far still has enough candidates to fill the page.
+    private const int CandidatePoolSize = (100 + 20) * 5;
 
     public required string Query { get; init; }
 
@@ -16,10 +20,10 @@ public sealed record SearchRequest
     public int Offset { get; init; }
 
     /// <summary>
-    /// How many chunks each ranker contributes before merging: at least 50, and five per requested page position,
-    /// so every page of one query is cut from the same ranking.
+    /// How many chunks each ranker contributes before merging. Fixed per query so every page of one query is cut
+    /// from the same ranking and <see cref="SearchResponse.Total"/> does not depend on <see cref="Offset"/>.
     /// </summary>
-    public int CandidateCount => Math.Max(MinCandidateCount, (Offset + Limit) * 5);
+    public int CandidateCount => CandidatePoolSize;
 }
 
 public sealed record SearchHit
