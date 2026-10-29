@@ -115,7 +115,7 @@ public sealed class CrawlConfig
 
     public int TimeoutSeconds { get; set; } = 30;
 
-    public string UserAgent { get; set; } = "McpMySiteIndexer/0.3 (+https://github.com/pournasserian/mcp-my-site)";
+    public string UserAgent { get; set; } = "McpMySiteIndexer/0.4 (+https://github.com/pournasserian/mcp-my-site)";
 
     /// <summary>Replay pages the previous build stored when the sitemap lastmod is unchanged or the server answers 304.</summary>
     public bool SkipUnchanged { get; set; } = true;
