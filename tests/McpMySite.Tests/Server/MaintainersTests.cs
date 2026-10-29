@@ -138,6 +138,26 @@ public class MaintainersTests(ServerFixture fixture) : IClassFixture<ServerFixtu
     }
 
     [Fact]
+    public void AnEntryWithoutAnEmailIsRefused()
+    {
+        var maintainers = new MaintainersOptions { new() { Email = "owner@example.test" }, new() { Name = "Ops Team" } };
+
+        var error = Assert.Throws<InvalidOperationException>(maintainers.Validate);
+
+        Assert.Contains("Maintainers:1:Email", error.Message);
+    }
+
+    [Fact]
+    public void AnEntryWithoutAnEmailStopsTheServerStarting()
+    {
+        using var factory = With(("Maintainers:0:Name", "Ops Team"));
+
+        var error = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+
+        Assert.Contains("Maintainers:0:Email", error.ToString());
+    }
+
+    [Fact]
     public void MaintainersOptionsBindsIndexedKeysLikeMaintainers0Email()
     {
         var configuration = new ConfigurationBuilder()

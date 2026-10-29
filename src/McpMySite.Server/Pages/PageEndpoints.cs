@@ -25,8 +25,8 @@ public static class PageEndpoints
                 .AllowHead()
                 .ExcludeFromDescription();
 
-            app.MapGet("/.well-known/security.txt", (HttpRequest request, IOptions<UiOptions> options) =>
-                Results.Text(SecurityTxt(SiteInfo.BaseUrl(request, options.Value), maintainers, DateTimeOffset.UtcNow), "text/plain; charset=utf-8"))
+            app.MapGet("/.well-known/security.txt", (HttpRequest request, IOptions<UiOptions> options, TimeProvider time) =>
+                Results.Text(SecurityTxt(SiteInfo.BaseUrl(request, options.Value), maintainers, time.GetUtcNow()), "text/plain; charset=utf-8"))
                 .AllowHead()
                 .ExcludeFromDescription();
         }

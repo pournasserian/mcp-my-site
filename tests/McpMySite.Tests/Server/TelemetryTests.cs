@@ -352,6 +352,7 @@ public class ServerTelemetryUnitTests
         holder,
         Options.Create(new McpMySite.Core.Embeddings.EmbeddingOptions { ApiKeyEnvironmentVariable = "MCPMYSITE_TEST_KEY_THAT_IS_NOT_SET" }),
         Options.Create(new TelemetryOptions { LogQueryText = logQueryText }),
+        Options.Create(new SearchApiOptions()),
         logs.For<SiteSearchService>());
 
     [Fact]
@@ -493,6 +494,8 @@ public class McpClientTagTests
             Assert.True(response.IsSuccessStatusCode, response.StatusCode + ": " + await response.Content.ReadAsStringAsync());
         }
 
+        // Detached before reading: the SDK's own spans can still stop after the response has been answered.
+        tracing.Dispose();
         var search = Assert.Single(activities, a => a.OperationName == "mcpmysite.search" && a.GetTagItem("mcp.client.name") as string == "meta-test-client");
         Assert.Equal("4.2", search.GetTagItem("mcp.client.version"));
         Assert.Equal("2026-07-28", search.GetTagItem("mcp.protocol.version"));
@@ -525,6 +528,7 @@ public class McpClientTagTests
             response.EnsureSuccessStatusCode();
         }
 
+        tracing.Dispose();
         var init = Assert.Single(activities, a => a.GetTagItem("mcp.client.name") as string == "init-test-client");
         Assert.Equal(ServerDiagnostics.McpSdkName, init.Source.Name);
         Assert.StartsWith("initialize", init.OperationName);

@@ -68,4 +68,13 @@ public static class TestIndex
         await IndexStoreOpener.CreateWriter(storeType).WriteAsync(directory, Manifest(storeType, builtAt, keywordOnly), Pages, Chunks, keywordOnly ? [] : Vectors);
         return directory;
     }
+
+    /// <summary>A keyword-only index of the given pages and chunks, for tests that need a corpus of their own size.</summary>
+    public static async Task<string> WriteAsync(string storeType, IReadOnlyList<PageDocument> pages, IReadOnlyList<ChunkRecord> chunks)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "mcpmysite-tests", Guid.NewGuid().ToString("N"));
+        var manifest = Manifest(storeType, keywordOnly: true) with { PageCount = pages.Count, ChunkCount = chunks.Count };
+        await IndexStoreOpener.CreateWriter(storeType).WriteAsync(directory, manifest, pages, chunks, ReadOnlyMemory<float>.Empty);
+        return directory;
+    }
 }
