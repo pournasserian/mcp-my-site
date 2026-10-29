@@ -29,6 +29,7 @@ services.AddRazorComponents();
 services.AddSingleton<LlmsTxt>();
 services.AddSingleton(TimeProvider.System);
 services.AddSingleton<VisitorSalt>();
+services.AddSingleton<ClientIpResolver>();
 
 // Numbers are plain JSON numbers; the web default also accepts strings, which would make every OpenAPI number "integer or string".
 services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
@@ -84,8 +85,9 @@ services.AddRateLimiter(options =>
     options.AddPolicy(SearchEndpoints.RateLimitPolicy, context =>
     {
         var permit = context.RequestServices.GetRequiredService<IOptions<RateLimitOptions>>().Value.PermitPerMinute;
+        var clientIp = context.RequestServices.GetRequiredService<ClientIpResolver>().Resolve(context);
         return RateLimitPartition.GetFixedWindowLimiter(
-            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            clientIp,
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = Math.Max(1, permit),
