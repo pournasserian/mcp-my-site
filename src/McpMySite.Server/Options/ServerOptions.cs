@@ -60,8 +60,10 @@ public sealed class SearchApiOptions
     public string[] TrustedProxies { get; set; } = [];
 
     /// <summary>
-    /// Header to read the client IP from when the request comes from a <see cref="TrustedProxies"/> address, such
-    /// as X-Forwarded-For or CF-Connecting-IP. Ignored when <see cref="TrustedProxies"/> is empty.
+    /// Header to read the client IP from when the request comes from a <see cref="TrustedProxies"/> address: one
+    /// the caller sets itself, such as X-Visitor-IP. Not X-Forwarded-For or CF-Connecting-IP, which the forwarded
+    /// headers and Cloudflare middlewares have already consumed by the time this is read. Ignored when
+    /// <see cref="TrustedProxies"/> is empty.
     /// </summary>
     public string? ClientIpHeader { get; set; }
 }
@@ -122,6 +124,18 @@ public sealed class MaintainerOptions
 public sealed class MaintainersOptions : List<MaintainerOptions>
 {
     public const string SectionName = "Maintainers";
+
+    /// <summary>An entry without an email would publish an empty mailto: contact; refused at startup instead.</summary>
+    public void Validate()
+    {
+        for (var i = 0; i < Count; i++)
+        {
+            if (string.IsNullOrWhiteSpace(this[i].Email))
+            {
+                throw new InvalidOperationException($"{SectionName}:{i}:Email is required; every maintainer needs an email address.");
+            }
+        }
+    }
 }
 
 public sealed class RateLimitOptions

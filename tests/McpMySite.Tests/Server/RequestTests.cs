@@ -142,12 +142,12 @@ public class CloudflareClientIpMiddlewareTests
     }
 
     [Fact]
-    public void RangeThatIsNotCidrFailsAtStartup()
+    public void RangeThatIsNeitherCidrNorAFullAddressFailsAtStartup()
     {
         var error = Assert.Throws<InvalidOperationException>(() =>
-            new CloudflareClientIpMiddleware(_ => Task.CompletedTask, Options.Create(new CloudflareOptions { TrustedNetworks = ["173.245.48.0"] })));
+            new CloudflareClientIpMiddleware(_ => Task.CompletedTask, Options.Create(new CloudflareOptions { TrustedNetworks = ["173.245.48"] })));
 
-        Assert.Contains("173.245.48.0", error.Message);
+        Assert.Contains("173.245.48", error.Message);
     }
 }
 
@@ -312,6 +312,8 @@ public class ClientIpResolverTests
     [Theory]
     [InlineData("not-an-ip")]
     [InlineData("")]
+    [InlineData("1")]
+    [InlineData("203.0.113")]
     public void MalformedForwardedHeaderFallsBackToTheRawAddress(string value)
     {
         var resolver = Resolver(["10.0.0.0/8"]);
@@ -414,6 +416,14 @@ public class SearchApiTrustedProxyServerTests
             Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(Search("198.51.100.7", "203.0.113.1"))).StatusCode);
             Assert.Equal(HttpStatusCode.TooManyRequests, (await client.SendAsync(Search("198.51.100.7", "203.0.113.2"))).StatusCode);
         }
+    }
+
+    [Fact]
+    public async Task EntryThatIsNotAnAddressStopsTheServerStarting()
+    {
+        var error = await Assert.ThrowsAnyAsync<Exception>(() => StartAsync(new() { ["SearchApi:TrustedProxies:0"] = "not-an-address" }));
+
+        Assert.Contains("SearchApi:TrustedProxies entry 'not-an-address'", error.ToString());
     }
 
     [Fact]

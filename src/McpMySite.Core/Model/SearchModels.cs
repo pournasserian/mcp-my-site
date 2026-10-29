@@ -2,11 +2,17 @@ namespace McpMySite.Core.Model;
 
 public sealed record SearchRequest
 {
-    // Fixed, not grown from this request's own Offset and Limit: a pool sized for the current page used to pull
-    // in more distinct pages on a later page, so Total (the pages found in the pool) rose as the reader paged
-    // forward instead of describing the query. Sized for the API's largest supported page (SearchApi:MaxOffset
-    // 100 plus SearchApi:MaxLimit 20) so paging that far still has enough candidates to fill the page.
-    private const int CandidatePoolSize = (100 + 20) * 5;
+    /// <summary>
+    /// The pool each ranker contributes when the caller sets no <see cref="CandidateCount"/>: enough for an offset
+    /// of 100 plus a page of 20, the server's default limits.
+    /// </summary>
+    public const int DefaultCandidateCount = (100 + 20) * 5;
+
+    /// <summary>
+    /// The pool that covers the deepest page a caller may ask for: five chunks per page position up to
+    /// <paramref name="maxOffset"/> plus <paramref name="maxLimit"/>, never below <see cref="DefaultCandidateCount"/>.
+    /// </summary>
+    public static int CandidateCountFor(int maxOffset, int maxLimit) => Math.Max(DefaultCandidateCount, (maxOffset + maxLimit) * 5);
 
     public required string Query { get; init; }
 
@@ -20,10 +26,12 @@ public sealed record SearchRequest
     public int Offset { get; init; }
 
     /// <summary>
-    /// How many chunks each ranker contributes before merging. Fixed per query so every page of one query is cut
-    /// from the same ranking and <see cref="SearchResponse.Total"/> does not depend on <see cref="Offset"/>.
+    /// How many chunks each ranker contributes before merging. Independent of <see cref="Offset"/> and
+    /// <see cref="Limit"/>: a pool sized for the current page used to pull in more distinct pages on a later page,
+    /// so <see cref="SearchResponse.Total"/> rose as the reader paged forward instead of describing the query. The
+    /// server sets it from its configured limits with <see cref="CandidateCountFor"/>.
     /// </summary>
-    public int CandidateCount => CandidatePoolSize;
+    public int CandidateCount { get; init; } = DefaultCandidateCount;
 }
 
 public sealed record SearchHit

@@ -771,7 +771,7 @@ variables win over the file. All settings are read at startup; restart after cha
 | `SearchApi:MaxOffset` | `100` | Upper bound for `offset`, on the search API and the MCP `search` tool. |
 | `SearchApi:MaxQueryLength` | `500` | Longer queries get `400`. |
 | `SearchApi:TrustedProxies` | `[]` | IPs or CIDRs of a site's own server-to-server caller of the search API. When the connection is one of these, `SearchApi:ClientIpHeader` stands in for the rate limit's client IP. Empty never trusts it. Section 7.6. |
-| `SearchApi:ClientIpHeader` | | Header to read the client IP from when `SearchApi:TrustedProxies` matches, such as a header the caller sets itself. Ignored when `SearchApi:TrustedProxies` is empty. |
+| `SearchApi:ClientIpHeader` | | Header to read the client IP from when `SearchApi:TrustedProxies` matches: one the caller sets itself, such as `X-Visitor-IP`. Ignored when `SearchApi:TrustedProxies` is empty. |
 | `Ui:Enabled` | `true` | Serve the pages meant for people: the landing page at `/`, the API reference at `/docs`, `llms.txt` and `sitemap.xml`. The OpenAPI document, `/api/info` and `robots.txt` are served either way. |
 | `Ui:LandingPage` | `true` | Serve `/` as the landing page. Off, `/` is the short text summary and a browser opening `Mcp:Path` is no longer redirected to it. |
 | `Ui:ApiReference` | `true` | Serve the interactive API reference at `/docs`. The OpenAPI document is served either way. |
@@ -986,11 +986,13 @@ client address for rate limiting and telemetry, nothing more.
 caller of record, so every one of its visitors shares that single rate-limit bucket. `SearchApi:TrustedProxies`
 (a list of IPs or CIDRs) and `SearchApi:ClientIpHeader` let that caller's own forwarded header stand
 in for the visitor instead, scoped to the search API's rate limit only — nothing else reads it. Both
-are empty by default, so an unconfigured server is unchanged. Pick a header the caller actually sets
-and that nothing earlier in the pipeline already consumes: not `X-Forwarded-For` when
-`RateLimiting:UseForwardedHeaders` is `true`, since that header is already rewritten into the
-connection's address before this setting is checked. A header name the caller controls, such as a
-custom one it adds itself, or `CF-Connecting-IP` when the caller is itself behind Cloudflare, works.
+are empty by default, so an unconfigured server is unchanged. Use a header the caller sets itself,
+such as `X-Visitor-IP`, not one something earlier in the pipeline already consumes: `X-Forwarded-For`
+is rewritten into the connection's address by `RateLimiting:UseForwardedHeaders`, and
+`CF-Connecting-IP` is set by the Cloudflare edge to the caller's own address (a Worker cannot
+override it) and consumed by `Cloudflare:TrustConnectingIp`, so partitioning on either keeps every
+visitor in one bucket. The address in the header is believed only when it is written in full; the
+first entry of a comma-separated chain is used.
 
 ### 7.7 Health and status
 

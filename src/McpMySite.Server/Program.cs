@@ -10,13 +10,13 @@ services.Configure<TelemetryOptions>(configuration.GetSection(TelemetryOptions.S
 services.Configure<CloudflareOptions>(configuration.GetSection(CloudflareOptions.SectionName));
 services.Configure<UiOptions>(configuration.GetSection(UiOptions.SectionName));
 services.Configure<EmbeddingOptions>(configuration.GetSection(EmbeddingOptions.SectionName));
-services.Configure<MaintainersOptions>(configuration.GetSection(MaintainersOptions.SectionName));
 
 var mcpOptions = configuration.GetSection(McpOptions.SectionName).Get<McpOptions>() ?? new McpOptions();
 var searchApiOptions = configuration.GetSection(SearchApiOptions.SectionName).Get<SearchApiOptions>() ?? new SearchApiOptions();
 var rateLimitOptions = configuration.GetSection(RateLimitOptions.SectionName).Get<RateLimitOptions>() ?? new RateLimitOptions();
 var uiOptions = configuration.GetSection(UiOptions.SectionName).Get<UiOptions>() ?? new UiOptions();
 var maintainersOptions = configuration.GetSection(MaintainersOptions.SectionName).Get<MaintainersOptions>() ?? new MaintainersOptions();
+maintainersOptions.Validate();
 
 // Registered before the index refresh service so that exporters are running when it writes its first log lines.
 var telemetryExporter = builder.AddSiteTelemetry();
@@ -125,6 +125,9 @@ services.AddOptions<HttpLoggingOptions>().Configure<IOptions<TelemetryOptions>>(
 
 var app = builder.Build();
 app.FlushTelemetryOnShutdown();
+
+// Built once here so a mistyped SearchApi:TrustedProxies entry fails startup, not the first rate-limited request.
+app.Services.GetRequiredService<ClientIpResolver>();
 
 app.UseHttpLogging();
 

@@ -9,17 +9,19 @@ public sealed class SiteSearchService : IDisposable
     private readonly IndexHolder _holder;
     private readonly EmbeddingOptions _embeddingOptions;
     private readonly TelemetryOptions _telemetry;
+    private readonly int _candidateCount;
     private readonly ILogger<SiteSearchService> _logger;
     private readonly object _lock = new();
     private IEmbeddingGenerator<string, Embedding<float>>? _generator;
     private (string? Model, int Dimensions)? _generatorKey;
     private int _embeddingFailing;
 
-    public SiteSearchService(IndexHolder holder, IOptions<EmbeddingOptions> embeddingOptions, IOptions<TelemetryOptions> telemetry, ILogger<SiteSearchService> logger)
+    public SiteSearchService(IndexHolder holder, IOptions<EmbeddingOptions> embeddingOptions, IOptions<TelemetryOptions> telemetry, IOptions<SearchApiOptions> searchApi, ILogger<SiteSearchService> logger)
     {
         _holder = holder;
         _embeddingOptions = embeddingOptions.Value;
         _telemetry = telemetry.Value;
+        _candidateCount = SearchRequest.CandidateCountFor(searchApi.Value.MaxOffset, searchApi.Value.MaxLimit);
         _logger = logger;
     }
 
@@ -71,7 +73,7 @@ public sealed class SiteSearchService : IDisposable
             }
         }
 
-        var response = await store.SearchAsync(new SearchRequest { Query = query, QueryVector = vector, Limit = limit, Offset = offset }, cancellationToken);
+        var response = await store.SearchAsync(new SearchRequest { Query = query, QueryVector = vector, Limit = limit, Offset = offset, CandidateCount = _candidateCount }, cancellationToken);
         var elapsed = stopwatch.Elapsed.TotalMilliseconds;
 
         var tags = new TagList { { "channel", channel }, { "fallback", fallback } };

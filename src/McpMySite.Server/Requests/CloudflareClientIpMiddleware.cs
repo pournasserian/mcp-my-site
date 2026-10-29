@@ -1,6 +1,3 @@
-using System.Net;
-using System.Net.Sockets;
-
 namespace McpMySite.Server.Requests;
 
 /// <summary>
@@ -23,7 +20,7 @@ public sealed class CloudflareClientIpMiddleware
     public const string ClientAddressTag = "client.address";
 
     private readonly RequestDelegate _next;
-    private readonly System.Net.IPNetwork[] _trusted;
+    private readonly TrustedNetworks _trusted;
     private readonly bool _enabled;
 
     public CloudflareClientIpMiddleware(RequestDelegate next, IOptions<CloudflareOptions> options)
@@ -31,27 +28,18 @@ public sealed class CloudflareClientIpMiddleware
         _next = next;
 
         // Parsed even when off, so a mistyped range is found at startup rather than the day the setting is turned on.
-        _trusted = options.Value.TrustedNetworks.Select(range =>
-            System.Net.IPNetwork.TryParse(range, out var network)
-                ? network
-                : throw new InvalidOperationException($"Cloudflare:TrustedNetworks entry '{range}' is not a CIDR range such as 173.245.48.0/20.")).ToArray();
+        _trusted = TrustedNetworks.Parse(options.Value.TrustedNetworks, "Cloudflare:TrustedNetworks");
         _enabled = options.Value.TrustConnectingIp;
     }
 
     public Task InvokeAsync(HttpContext context)
     {
-        if (_enabled && context.Connection.RemoteIpAddress is { } peer && IsTrusted(peer))
+        if (_enabled && context.Connection.RemoteIpAddress is { } peer && _trusted.Contains(peer))
         {
             Apply(context);
         }
 
         return _next(context);
-    }
-
-    private bool IsTrusted(IPAddress peer)
-    {
-        var address = peer.IsIPv4MappedToIPv6 ? peer.MapToIPv4() : peer;
-        return _trusted.Any(network => network.Contains(address));
     }
 
     private static void Apply(HttpContext context)
@@ -60,7 +48,7 @@ public sealed class CloudflareClientIpMiddleware
         var activity = Activity.Current;
 
         // Exactly one value: a repeated header means something other than Cloudflare added to it.
-        if (headers[ConnectingIpHeader] is { Count: 1 } connecting && TryParseAddress(connecting[0], out var client))
+        if (headers[ConnectingIpHeader] is { Count: 1 } connecting && TrustedNetworks.TryParseAddress(connecting[0], out var client))
         {
             context.Connection.RemoteIpAddress = client;
             activity?.SetTag(ClientAddressTag, client.ToString());
@@ -76,28 +64,5 @@ public sealed class CloudflareClientIpMiddleware
         {
             activity?.SetTag(CountryTag, code);
         }
-    }
-
-    // IPAddress.TryParse also accepts "1" and "1.2" as shorthand; an address from Cloudflare is always written in full.
-    private static bool TryParseAddress(string? value, out IPAddress address)
-    {
-        address = IPAddress.None;
-        if (string.IsNullOrWhiteSpace(value) || !IPAddress.TryParse(value.Trim(), out var parsed))
-        {
-            return false;
-        }
-
-        var complete = parsed.AddressFamily switch
-        {
-            AddressFamily.InterNetwork => value.Count(c => c == '.') == 3,
-            AddressFamily.InterNetworkV6 => value.Contains(':'),
-            _ => false,
-        };
-        if (complete)
-        {
-            address = parsed;
-        }
-
-        return complete;
     }
 }

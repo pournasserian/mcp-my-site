@@ -43,6 +43,29 @@ public class IndexStoreTests
 
     [Theory]
     [MemberData(nameof(StoreTypes))]
+    public async Task TotalIsTheSameOnEveryPageOfOneQuery(string storeType)
+    {
+        // More matching pages than the old first-page candidate pool held, so a pool grown from the offset would
+        // find more of them on a later page and report a larger total there (#82).
+        var pages = Enumerable.Range(1, 70).Select(i => new PageDocument
+        {
+            Id = i, Url = $"https://example.test/rockets/{i}", Title = $"Rocket {i}", Language = "en", Headings = [], Markdown = $"Rocket {i} flies.",
+        }).ToList();
+        var chunks = pages.Select(p => new ChunkRecord { Id = p.Id, PageId = p.Id, Ordinal = 0, HeadingPath = [], Text = $"Rocket {p.Id} flies with rockets." }).ToList();
+        var directory = await TestIndex.WriteAsync(storeType, pages, chunks);
+        using var store = await IndexStoreOpener.OpenAsync(directory);
+
+        var firstPage = await store.SearchAsync(new SearchRequest { Query = "rockets", Limit = 1 });
+        var laterPage = await store.SearchAsync(new SearchRequest { Query = "rockets", Limit = 1, Offset = 60 });
+
+        Assert.Equal(70, firstPage.Total);
+        Assert.Equal(firstPage.Total, laterPage.Total);
+        Assert.Single(laterPage.Hits);
+        Assert.True(laterPage.HasMore);
+    }
+
+    [Theory]
+    [MemberData(nameof(StoreTypes))]
     public async Task HybridSearchCombinesKeywordAndVectorRankings(string storeType)
     {
         var directory = await TestIndex.WriteAsync(storeType);

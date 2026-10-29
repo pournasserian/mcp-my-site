@@ -99,10 +99,14 @@ public sealed class SqliteIndexStore : IIndexStore
             }
 
             var fused = HybridRanker.Fuse(keyword, vector);
-            var chunks = await LoadChunksAsync(fused.Select(f => f.ChunkId).ToList(), cancellationToken);
+
+            // The whole pool is only counted by page; chunk text is read for the page of hits alone.
+            var pageIds = await LoadChunkPageIdsAsync(fused.Select(f => f.ChunkId).ToList(), cancellationToken);
+            var (selected, total) = HybridRanker.SelectPage(fused, id => pageIds[id], request);
+            var chunks = await LoadChunksAsync(selected.Select(s => s.ChunkId).ToList(), cancellationToken);
             var pages = await LoadPagesAsync(chunks.Values.Select(c => c.PageId).Distinct().ToList(), cancellationToken);
 
-            return HybridRanker.ToPageHits(fused, id => chunks[id], id => pages[id], request);
+            return HybridRanker.ToResponse(selected, total, id => chunks[id], id => pages[id], request);
         }
         finally
         {
@@ -179,6 +183,25 @@ public sealed class SqliteIndexStore : IIndexStore
         }
 
         return ids;
+    }
+
+    private async Task<Dictionary<int, int>> LoadChunkPageIdsAsync(List<int> ids, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<int, int>(ids.Count);
+        if (ids.Count == 0)
+        {
+            return result;
+        }
+
+        await using var command = _connection.CreateCommand();
+        command.CommandText = $"SELECT id, page_id FROM chunks WHERE id IN ({ParameterList(command, ids)})";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result[reader.GetInt32(0)] = reader.GetInt32(1);
+        }
+
+        return result;
     }
 
     private async Task<Dictionary<int, HybridRanker.ChunkCandidate>> LoadChunksAsync(List<int> ids, CancellationToken cancellationToken)
