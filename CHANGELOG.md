@@ -18,6 +18,13 @@ All notable changes to this project are recorded here. The format follows
   as id pairs, and the internal link targets that are not in the index with the number of pages
   linking to each (#28).
 
+### Fixed
+
+- The search API's and MCP `search` tool's `total` no longer grows as a reader pages forward. The
+  candidate pool each ranker is cut from used to grow with the request's own `offset` and `limit`,
+  so a later page pulled in more distinct pages and `total` rose with it; the pool is now a fixed
+  size that covers the largest supported page up front (#82).
+
 ## [0.3.0] - 2026-10-23
 
 ### Added
